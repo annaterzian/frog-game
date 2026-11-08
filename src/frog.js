@@ -122,11 +122,14 @@ export class Frog {
     mouth.position.set(0.06, 0.74, 1.05);
     mouth.rotation.set(-0.2, 0, 0.07);
     this.squash.add(mouth);
+    this.mouth = mouth;
 
     // ---- Behaviour state
     this.time = 0;
     this.squashSpring = { x: 0, v: 0 }; // + is stretched tall, - is squashed flat
     this.wobble = { x: 0, v: 0 };
+    this.annoyed = 0; // 1 right after an eye poke, fades to 0
+    this.annoyedEye = null;
     this.dent = { x: 0, v: 0, target: 0, center: new THREE.Vector3(), dir: new THREE.Vector3(), part: null };
     this.lookTarget = new THREE.Vector3(0, 1, 10);
     this.happiness = 0; // rises while petted, fades slowly
@@ -155,6 +158,12 @@ export class Frog {
       while (part.parent && part.parent !== this.squash) part = part.parent;
       if (!part.userData.restScale) part.userData.restScale = part.scale.clone();
       this.dent.part = part;
+      // Poked in the eye: that's rude. Squeeze it shut, frown, shake head, lean away.
+      const eye = this.eyes.find((e) => e.group === part);
+      if (eye) {
+        this.annoyed = 1;
+        this.annoyedEye = eye;
+      }
     }
     this.dent.target = 1;
     this.dent.v += 8;
@@ -169,7 +178,7 @@ export class Frog {
   // A quick tap: the frog is mildly startled. Eyes pop open, pupils shrink.
   poke() {
     this.release();
-    this.surprise = 1;
+    if (this.annoyed <= 0) this.surprise = 1; // an eye poke is annoying, not surprising
     this.idleTimer = 4;
   }
 
@@ -281,7 +290,16 @@ export class Frog {
     const s = this.squashSpring.x + airborne * 0.18 + breathe;
     this.squash.scale.set(1 - s * 0.5, 1 + s, 1 - s * 0.5);
     this.squash.rotation.z = this.wobble.x * 0.12 + (this.isHappy ? Math.sin(t * 7) * 0.06 * this.happiness : 0);
-    this.squash.rotation.x = -airborne * 0.25;
+    // Annoyed: shake head "no", lean back, frown. Fades out over about 1.3 seconds.
+    this.annoyed = Math.max(0, this.annoyed - dt * 0.75);
+    const a = this.annoyed;
+    const shake = a > 0.25 ? Math.sin(t * 22) * 0.16 * Math.min(1, (a - 0.25) * 3) : 0;
+    this.squash.rotation.y = shake;
+    this.squash.rotation.x = -airborne * 0.25 - Math.min(1, a * 2) * 0.12;
+    this.squash.position.z = -Math.min(1, a * 2) * 0.12;
+    // Flipping the flat mouth upside down (and exaggerating the curve) makes a frown.
+    const frown = Math.min(1, a * 2.5);
+    this.mouth.scale.y = 1 - frown * 3.5;
     this.root.rotation.y = this.heading;
 
     // Eyes: blink now and then, get heavy-lidded and vacant when petted, pupils
@@ -300,7 +318,13 @@ export class Frog {
       // Lid angle: 0 covers the top half, positive closes further, negative opens.
       let lid = -0.75 + eye.droop - this.surprise * 0.9 + this.happiness * 0.8;
       if (this.blink > 0) lid = 1.5;
+      if (frown > 0) {
+        if (eye === this.annoyedEye && a > 0.3) lid = 1.5; // poked eye squeezed shut
+        else lid = Math.max(lid, -0.2 * frown); // the other one glares
+      }
       eye.lidPivot.rotation.x += (lid - eye.lidPivot.rotation.x) * Math.min(1, dt * 20);
+      // Lids slant down towards the middle for a scowl.
+      eye.lidPivot.rotation.z = eye.side * 0.4 * frown;
       eye.pupil.visible = eye.lidPivot.rotation.x < 0.1; // hidden once the lid is down over it
 
       const dx = local.x - eye.group.position.x;
