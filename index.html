@@ -5,8 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Frog Season</title>
     <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #cfd9b8; }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #d6dcb6; }
       canvas { display: block; touch-action: none; }
+      #hint {
+        position: fixed; bottom: 16px; left: 16px; right: 16px; margin: 0;
+        font: 14px/1.4 system-ui, sans-serif; color: #2f3b22; opacity: 0.75;
+        text-align: center; pointer-events: none;
+      }
       #title {
         position: fixed; top: 16px; left: 16px; margin: 0;
         font: 600 20px/1.2 system-ui, sans-serif; color: #2f3b22; opacity: 0.8;
@@ -16,6 +21,7 @@
   </head>
   <body>
     <h1 id="title">Frog Season</h1>
+    <p id="hint">Tap the frog to poke it · rub it to pet it · tap the ground to make it hop</p>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
