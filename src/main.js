@@ -1,10 +1,14 @@
 import * as THREE from 'three';
-import { Frog, FIRST_FROG } from './frog.js';
 import { Effects } from './effects.js';
 import { worldTime } from './world/materials.js';
 import { createHomePond } from './ponds/home.js';
 import { createCatchingPond } from './ponds/catching.js';
 import { createTravel } from './ponds/travel.js';
+import { Collection } from './collection.js';
+import { recipeById } from './roster.js';
+import { createUI } from './ui.js';
+import { setupHome } from './care.js';
+import { setupCatching } from './catching.js';
 
 // ---- Renderer, scene, light
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -76,13 +80,23 @@ const travel = createTravel({ scene, ponds, applyLook, fadeEl: document.getEleme
 window.addEventListener('resize', fitCamera);
 travelBtn.addEventListener('click', () => travel.goTo(travel.current().travel[0].to));
 
-// ---- Pip lives in the home pond.
-const pip = new Frog(FIRST_FROG);
-ponds.home.group.add(pip.root);
-ponds.home.frogs.push(pip);
+// ---- Your frogs, saved in this browser. Everyone starts with Pip.
+const collection = new Collection();
+if (!collection.frogs.length) collection.add(recipeById('pip'));
+const fx = new Effects(scene);
+const ui = createUI(collection);
+const home = setupHome({ pond: ponds.home, collection, ui });
+const catching = setupCatching({ pond: ponds.catch, collection, fx, ui, camera });
+travel.onEnter((name) => {
+  if (name === 'home') home.sync();
+  if (name === 'catch') catching.enter();
+  ui.hideCard();
+});
+travel.onLeave((name) => {
+  if (name === 'catch') catching.leave();
+});
 
 travel.start('home');
-const fx = new Effects(scene);
 
 // ---- Pointer: poke, pet, look, hop, travel
 // Lesson: a Raycaster shoots an invisible line from the camera through the pointer
@@ -118,7 +132,8 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   castAt(e);
   renderer.domElement.setPointerCapture(e.pointerId);
   if (pond.input?.down?.(e, raycaster)) return;
-  Object.assign(press, { active: true, frog: frogUnderPointer(pond), moved: 0, x: e.clientX, y: e.clientY });
+  // Ponds with their own input (the catching pond) don't get the default poke and pet.
+  Object.assign(press, { active: true, frog: pond.input ? null : frogUnderPointer(pond), moved: 0, x: e.clientX, y: e.clientY });
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
@@ -139,10 +154,11 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   // Rubbing back and forth over a frog counts as petting.
   const f = press.frog;
   if (f && raycaster.intersectObjects(f.parts, false).length > 0) {
-    f.pet(step * 0.0025);
+    const fondness = home.pet(f, step);
+    f.pet(step * 0.0025 * fondness);
     if (f.isHappy && performance.now() - press.lastHeart > 280) {
       press.lastHeart = performance.now();
-      fx.heart(f.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1.9, 0)));
+      fx.heart(home.headOf(f));
     }
   }
 });
@@ -161,6 +177,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (press.moved > 12) return; // that was a drag, not a tap
   if (press.frog) {
     press.frog.poke();
+    home.tapped(press.frog);
     return;
   }
   // Tapped a signpost: off we go.
@@ -170,6 +187,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
       return;
     }
   }
+  if (pond.input) return;
   // Tapped somewhere else: the nearest frog hops towards it, staying on land.
   const hit = raycaster.intersectObjects([...pond.ground, pond.water], false)[0];
   if (!hit) return;
@@ -196,6 +214,7 @@ const events = {
     fx.dust(pos.clone(), height);
   },
   wander(f) {
+    if (f.wander) return f.wander(); // some frogs (wild ones) have their own idea of wandering
     const a = Math.random() * Math.PI * 2;
     const target = f.root.position.clone().add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(1.4));
     f.hopTo(travel.current().clampToLand(target));
@@ -209,10 +228,11 @@ renderer.setAnimationLoop(() => {
   worldTime.value += dt;
   const pond = travel.current();
   pond.update(dt, worldTime.value);
+  if (pond === ponds.catch) catching.update(dt);
   for (const f of pond.frogs) f.update(dt, events);
   fx.update(dt);
   renderer.render(scene, camera);
 });
 
 // Handy for poking at things from the browser console.
-window.frogSeason = { frog: pip, ponds, travel, scene, camera };
+window.frogSeason = { ponds, travel, scene, camera, collection, catching };

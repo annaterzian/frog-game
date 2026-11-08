@@ -153,9 +153,10 @@ export class Frog {
     this.idleTimer = 5;
   }
 
-  hopTo(point) {
-    if (this.hop) return;
-    this.startHop(point.clone(), 0.9, 0.55);
+  hopTo(point, height = 0.9, duration = 0.55) {
+    if (this.hop) return false;
+    this.startHop(point.clone(), height, duration);
+    return true;
   }
 
   startHop(to, height, duration) {
@@ -189,11 +190,12 @@ export class Frog {
       this.heading = lerpAngle(h.turnFrom, h.turnTo, THREE.MathUtils.clamp((h.t + 0.12) / 0.15, 0, 1));
       if (h.t > 0) {
         this.root.position.lerpVectors(h.from, h.to, p);
-        this.root.position.y = Math.sin(p * Math.PI) * h.height;
+        // Take off from one height and land at another (lily pads sit a bit lower, logs higher).
+        this.root.position.y += Math.sin(p * Math.PI) * h.height;
         airborne = Math.sin(p * Math.PI);
       }
       if (p >= 1) {
-        this.root.position.y = 0;
+        this.root.position.y = h.to.y;
         this.squashSpring.v -= 7;
         this.hop = null;
         events.landed?.(this.root.position, h.height);
