@@ -17,11 +17,25 @@
         font: 600 20px/1.2 system-ui, sans-serif; color: #2f3b22; opacity: 0.8;
         pointer-events: none;
       }
+      #place { display: block; font-size: 14px; font-weight: 500; opacity: 0.8; margin-top: 2px; }
+      #travel {
+        position: fixed; top: 14px; right: 16px;
+        font: 600 14px/1 system-ui, sans-serif; color: #2f3b22;
+        background: rgba(255, 250, 230, 0.6); border: 1.5px solid rgba(47, 59, 34, 0.35);
+        border-radius: 999px; padding: 10px 16px; cursor: pointer;
+      }
+      #travel:hover { background: rgba(255, 250, 230, 0.85); }
+      #fade {
+        position: fixed; inset: 0; opacity: 0; pointer-events: none;
+        transition-property: opacity; transition-timing-function: ease-in-out;
+      }
     </style>
   </head>
   <body>
-    <h1 id="title">Frog Season</h1>
-    <p id="hint">Tap the frog to poke it · rub it to pet it · tap the ground to make it hop</p>
+    <h1 id="title">Frog Season<span id="place"></span></h1>
+    <button id="travel" type="button"></button>
+    <div id="fade"></div>
+    <p id="hint"></p>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
