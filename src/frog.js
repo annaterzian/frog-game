@@ -62,6 +62,7 @@ export class Frog {
     });
     this.body = add(new THREE.Mesh(bodyGeo, flatMaterial(0xffffff, { vertexColors: true })));
     this.body.position.y = 0.5;
+    this.bodyRest = bodyGeo.attributes.position.array.slice(); // undented shape, for poking
 
     // ---- Throat pouch: hidden until the frog croaks.
     this.pouch = add(new THREE.Mesh(blob(rng, { detail: 1, rough: 0.05 }), flatMaterial(bellyCol)));
@@ -126,6 +127,7 @@ export class Frog {
     this.time = 0;
     this.squashSpring = { x: 0, v: 0 }; // + is stretched tall, - is squashed flat
     this.wobble = { x: 0, v: 0 };
+    this.dent = { x: 0, v: 0, target: 0, center: new THREE.Vector3(), dir: new THREE.Vector3(), part: null };
     this.lookTarget = new THREE.Vector3(0, 1, 10);
     this.happiness = 0; // rises while petted, fades slowly
     this.surprise = 0;
@@ -139,12 +141,36 @@ export class Frog {
   }
 
   // ---- Things the player can do to the frog
+
+  // Finger goes down on the frog: the spot under it dents in and stays in while held.
+  // `hit` is the raycast result (which mesh, where, and which way that face points).
+  press(hit) {
+    if (hit.object === this.body) {
+      this.dent.center.copy(this.body.worldToLocal(hit.point.clone()));
+      this.dent.dir.copy(hit.face.normal).negate();
+      this.dent.part = null;
+    } else {
+      // Eyes, legs, throat: squish that whole little piece instead.
+      let part = hit.object;
+      while (part.parent && part.parent !== this.squash) part = part.parent;
+      if (!part.userData.restScale) part.userData.restScale = part.scale.clone();
+      this.dent.part = part;
+    }
+    this.dent.target = 1;
+    this.dent.v += 8;
+    this.wobble.v += (this.rng() - 0.5) * 1.5; // tiny flinch, not a full-body squash
+  }
+
+  // Finger lifts (or starts rubbing instead): the dent springs back out with a little jiggle.
+  release() {
+    this.dent.target = 0;
+  }
+
+  // A quick tap: the frog is mildly startled. Eyes pop open, pupils shrink.
   poke() {
-    this.squashSpring.v -= 9;
-    this.wobble.v += (this.rng() - 0.5) * 10;
+    this.release();
     this.surprise = 1;
     this.idleTimer = 4;
-    if (!this.hop) this.startHop(this.root.position.clone(), 0.45, 0.35);
   }
 
   pet(amount) {
@@ -166,6 +192,38 @@ export class Frog {
     this.squashSpring.v -= 4; // crouch before jumping
   }
 
+  updateDent(dt) {
+    const d = this.dent;
+    // Same spring idea, but pulling towards a target (1 = pressed in, 0 = rest).
+    d.v += (260 * (d.target - d.x) - 14 * d.v) * dt;
+    d.x += d.v * dt;
+    if (Math.abs(d.x) < 0.0005 && Math.abs(d.v) < 0.005 && d.target === 0) {
+      if (d.x === 0) return;
+      d.x = d.v = 0;
+    }
+    if (d.part) {
+      // A small piece just gets a little squished.
+      d.part.scale.copy(d.part.userData.restScale).multiplyScalar(1 - d.x * 0.15);
+      return;
+    }
+    // The body: push nearby vertices inward, most at the touch point, fading out by RADIUS.
+    // Vertices are moved by where they sit at rest, so shared corners move together.
+    const RADIUS = 0.5;
+    const DEPTH = 0.16;
+    const pos = this.body.geometry.attributes.position;
+    const rest = this.bodyRest;
+    for (let i = 0; i < pos.count; i++) {
+      const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
+      const dist = Math.hypot(x - d.center.x, y - d.center.y, z - d.center.z);
+      const w = dist < RADIUS ? (1 - dist / RADIUS) ** 2 : 0;
+      const push = w * DEPTH * d.x;
+      pos.array[i * 3] = x + d.dir.x * push;
+      pos.array[i * 3 + 1] = y + d.dir.y * push;
+      pos.array[i * 3 + 2] = z + d.dir.z * push;
+    }
+    pos.needsUpdate = true;
+  }
+
   get isHappy() {
     return this.happiness > 0.35;
   }
@@ -179,6 +237,8 @@ export class Frog {
       s.v += (-k * s.x - damp * s.v) * dt;
       s.x += s.v * dt;
     }
+
+    this.updateDent(dt);
 
     // Hopping: turn, crouch, arc through the air, then splat on landing.
     let airborne = 0;
