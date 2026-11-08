@@ -10,7 +10,7 @@ export const FIRST_FROG = {
   body: '#86b04e',
   belly: '#efe3a8',
   spots: '#5d8a38',
-  cheeks: '#f29a8f',
+  eyeMismatch: 0.15, // the right eye is this much smaller than the left
   plumpness: 1,
   eyeSize: 1,
 };
@@ -68,32 +68,28 @@ export class Frog {
     this.pouch.position.set(0, 0.32, 0.72);
     this.pouch.scale.setScalar(0.01);
 
-    // ---- Legs: chunky thighs at the back, little arms at the front.
+    // ---- Legs: big lumpy haunches at the back, stubby nubs at the front. No toes, no fuss.
     for (const side of [-1, 1]) {
-      const thigh = add(new THREE.Mesh(blob(rng, { sx: 0.42, sy: 0.32, sz: 0.62 }), skin));
-      thigh.position.set(side * 1.0 * plump, 0.28, -0.3);
-      thigh.rotation.y = side * -0.35;
-      const foot = add(new THREE.Mesh(blob(rng, { sx: 0.3, sy: 0.08, sz: 0.42 }), skin));
-      foot.position.set(side * 1.12 * plump, 0.05, 0.12);
-      foot.rotation.y = side * 0.4;
-      const arm = add(new THREE.Mesh(blob(rng, { sx: 0.14, sy: 0.3, sz: 0.14 }), skin));
-      arm.position.set(side * 0.62 * plump, 0.22, 0.72);
-      arm.rotation.z = side * 0.25;
-      const hand = add(new THREE.Mesh(blob(rng, { sx: 0.2, sy: 0.06, sz: 0.2 }), skin));
-      hand.position.set(side * 0.7 * plump, 0.04, 0.86);
+      const haunch = add(new THREE.Mesh(blob(rng, { rough: 0.18, sx: 0.55, sy: 0.42, sz: 0.78 }), skin));
+      haunch.position.set(side * 0.95 * plump, 0.3, -0.15);
+      haunch.rotation.y = side * -0.25;
+      const nub = add(new THREE.Mesh(blob(rng, { rough: 0.18, sx: 0.26, sy: 0.32, sz: 0.28 }), skin));
+      nub.position.set(side * 0.66 * plump, 0.18, 0.7);
     }
 
-    // ---- Eyes: big bulging sockets, white eyeballs, huge pupils with a shine.
-    const r = 0.36 * recipe.eyeSize;
+    // ---- Eyes: mismatched, droopy-lidded, with tiny pupils that don't quite agree
+    // on where to look. Each eye is a little different, which is what makes it look dumb.
     this.eyes = [];
     for (const side of [-1, 1]) {
-      const eye = new THREE.Group(); // scaled flat to blink
-      eye.position.set(side * 0.5 * plump, 1.22, 0.42);
+      const sizeK = side < 0 ? 1 : 1 - recipe.eyeMismatch;
+      const r = 0.36 * recipe.eyeSize * sizeK;
+      const eye = new THREE.Group();
+      eye.position.set(side * 0.5 * plump, 1.18 + (side < 0 ? 0.03 : -0.02), 0.42);
       this.squash.add(eye);
       const socket = add(new THREE.Mesh(blob(rng, { rough: 0.06 }), skin), eye);
       socket.scale.setScalar(r * 1.12);
       socket.position.y = -0.06;
-      const ball = add(new THREE.Mesh(blob(rng, { detail: 2, rough: 0 }), flatMaterial(0xfbf8ee, { emissive: 0x4a4740 })), eye);
+      const ball = add(new THREE.Mesh(blob(rng, { detail: 2, rough: 0 }), flatMaterial(0xf1edd8, { emissive: 0x3a3830 })), eye);
       ball.scale.setScalar(r);
       ball.position.set(side * 0.03, 0.04, 0.06);
       // The pupil sits on a pivot inside the eyeball, so turning the pivot moves the gaze.
@@ -101,39 +97,30 @@ export class Frog {
       pivot.position.copy(ball.position);
       eye.add(pivot);
       const pupil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), flatMaterial(0x1d1a17));
-      pupil.scale.set(r * 0.62, r * 0.62, r * 0.28);
-      pupil.position.z = r * 0.76;
+      pupil.position.z = r * 0.9;
       pivot.add(pupil);
-      const shine = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), flatMaterial(0xffffff, { emissive: 0xffffff, emissiveIntensity: 0.6 }));
-      shine.scale.setScalar(r * 0.16);
-      shine.position.set(r * 0.18, r * 0.2, r * 1.0);
-      pivot.add(shine);
-      // Happy eyes: a little upside-down U, shown instead of the eyeball while petted.
-      const happy = new THREE.Mesh(new THREE.TorusGeometry(r * 0.55, 0.035, 3, 10, Math.PI), flatMaterial(0x2b2a1f));
-      happy.position.set(eye.position.x, eye.position.y - 0.02, eye.position.z + r * 1.05);
-      happy.rotation.x = -0.3;
-      happy.visible = false;
-      this.squash.add(happy);
-      this.eyes.push({ group: eye, pivot, pupil, happy, side });
+      // Eyelid: a skin-coloured half dome over the eyeball. Rotating it forward closes the eye.
+      const lidPivot = new THREE.Group();
+      lidPivot.position.copy(ball.position);
+      eye.add(lidPivot);
+      const lid = add(
+        new THREE.Mesh(new THREE.SphereGeometry(r * 1.08, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), skin),
+        lidPivot
+      );
+      lid.castShadow = false;
+      const droop = side < 0 ? 0.15 : 0.35; // how heavy-lidded this eye is at rest
+      this.eyes.push({ group: eye, pivot, pupil, lidPivot, r, droop, side, follow: side < 0 ? 1 : 0.35 });
     }
 
-    // ---- Mouth: a wide, slightly dopey smile.
-    const arc = Math.PI * 0.62;
-    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.028, 3, 14, arc), flatMaterial(0x2b2a1f));
-    mouth.rotation.z = -Math.PI / 2 - arc / 2;
-    mouth.position.set(0, 1.26, 0.98);
-    mouth.rotation.x = -0.25;
+    // ---- Mouth: a long, flat, slightly crooked line. Not a smile, just... a mouth.
+    const arc = 0.5;
+    const mouthGeo = new THREE.TorusGeometry(2, 0.03, 3, 8, arc);
+    mouthGeo.rotateZ(-Math.PI / 2 - arc / 2);
+    mouthGeo.translate(0, 2, 0);
+    const mouth = new THREE.Mesh(mouthGeo, flatMaterial(0x2b2a1f));
+    mouth.position.set(0.06, 0.74, 1.05);
+    mouth.rotation.set(-0.2, 0, 0.07);
     this.squash.add(mouth);
-
-    // ---- Blush: only shows when the frog is happy.
-    this.cheekMat = flatMaterial(recipe.cheeks, { transparent: true, opacity: 0 });
-    for (const side of [-1, 1]) {
-      const cheek = new THREE.Mesh(blob(rng, { rough: 0 }), this.cheekMat);
-      cheek.scale.set(0.16, 0.09, 0.05);
-      cheek.position.set(side * 0.7 * plump, 0.72, 0.88);
-      cheek.rotation.y = side * 0.6;
-      this.squash.add(cheek);
-    }
 
     // ---- Behaviour state
     this.time = 0;
@@ -237,33 +224,38 @@ export class Frog {
     this.squash.rotation.x = -airborne * 0.25;
     this.root.rotation.y = this.heading;
 
-    // Eyes: blink now and then, close happily when petted, pupils follow the pointer.
+    // Eyes: blink now and then, get heavy-lidded and vacant when petted, pupils
+    // (sort of) follow the pointer.
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0) {
-      this.blink = 0.16;
+      this.blink = 0.18;
       this.blinkTimer = 2 + this.rng() * 4;
     }
     this.blink = Math.max(0, this.blink - dt);
-    const lid = this.blink > 0 ? 0.15 : this.isHappy ? 0.35 : 1;
     this.surprise = Math.max(0, this.surprise - dt * 1.5);
     this.happiness = Math.max(0, this.happiness - dt * 0.12);
-    this.cheekMat.opacity = THREE.MathUtils.clamp((this.happiness - 0.2) * 2, 0, 0.9);
 
     const local = this.root.worldToLocal(tmp.copy(this.lookTarget));
     for (const eye of this.eyes) {
-      eye.group.scale.y += (lid - eye.group.scale.y) * Math.min(1, dt * 25);
-      eye.happy.visible = this.isHappy;
-      eye.pivot.visible = !this.isHappy;
+      // Lid angle: 0 covers the top half, positive closes further, negative opens.
+      let lid = -0.75 + eye.droop - this.surprise * 0.9 + this.happiness * 0.8;
+      if (this.blink > 0) lid = 1.5;
+      eye.lidPivot.rotation.x += (lid - eye.lidPivot.rotation.x) * Math.min(1, dt * 20);
+      eye.pupil.visible = eye.lidPivot.rotation.x < 0.1; // hidden once the lid is down over it
+
       const dx = local.x - eye.group.position.x;
       const dy = local.y - eye.group.position.y;
       const dz = Math.max(0.5, local.z - eye.group.position.z);
-      // A little cross-eyed and dopey by default, that's the charm.
-      const yaw = THREE.MathUtils.clamp(Math.atan2(dx, dz), -0.7, 0.7) + eye.side * 0.12;
-      const pitch = THREE.MathUtils.clamp(Math.atan2(dy, dz), -0.5, 0.5);
-      eye.pivot.rotation.y += (yaw - eye.pivot.rotation.y) * Math.min(1, dt * 10);
-      eye.pivot.rotation.x += (-pitch - eye.pivot.rotation.x) * Math.min(1, dt * 10);
-      const pupilSize = 1 - this.surprise * 0.45;
-      eye.pupil.scale.x = eye.pupil.scale.y = 0.36 * this.recipe.eyeSize * 0.62 * pupilSize;
+      // Slightly wall-eyed, and the smaller eye only half pays attention.
+      const drift = Math.sin(this.time * 0.7 + eye.side) * 0.15 * (1 - eye.follow);
+      const yaw = THREE.MathUtils.clamp(Math.atan2(dx, dz), -0.7, 0.7) * eye.follow + eye.side * 0.3 + drift;
+      // Pitch is capped low so the pupil never disappears up under the droopy lid.
+      const pitch = THREE.MathUtils.clamp(Math.atan2(dy, dz), -0.5, 0.1) * eye.follow + (eye.side > 0 ? 0.12 : 0);
+      eye.pivot.rotation.y += (yaw - eye.pivot.rotation.y) * Math.min(1, dt * 8);
+      eye.pivot.rotation.x += (-pitch - eye.pivot.rotation.x) * Math.min(1, dt * 8);
+      // Tiny pupils, even tinier when startled.
+      const p = eye.r * (0.3 - this.surprise * 0.1);
+      eye.pupil.scale.set(p, p, p * 0.5);
     }
   }
 }
