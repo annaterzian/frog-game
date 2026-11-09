@@ -89,7 +89,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     frog.pet(step * 0.0025);
     if (frog.isHappy && performance.now() - press.lastHeart > 280) {
       press.lastHeart = performance.now();
-      fx.heart(frog.root.position.clone().add(new THREE.Vector3(0, 1.9, 0)));
+      fx.heart(frog.root.position.clone().add(new THREE.Vector3(0, frog.headHeight + 0.2, 0)), frog.size);
     }
   }
 });
@@ -111,23 +111,23 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (!hit) return;
   if (hit.object === pond.water) fx.ripple(hit.point.setY(-0.08), 0.6);
   const target = hit.point.clone().setY(0);
-  target.clampLength(0, ISLAND_RADIUS - 1.1);
+  target.clampLength(0, ISLAND_RADIUS - 1.2 * frog.size);
   const from = frog.root.position.clone().setY(0);
-  // Long trips become a single big hop of at most 3.2 units.
+  // Long trips become a single big hop, as far as the frog can reach.
   const offset = target.sub(from);
-  offset.clampLength(0, 3.2);
+  offset.clampLength(0, frog.hopReach);
   frog.hopTo(from.add(offset));
 });
 
 // ---- Frog events
 const events = {
   landed(pos, height) {
-    fx.dust(pos.clone(), height);
+    fx.dust(pos.clone(), frog.size);
   },
   wander(f) {
     const a = Math.random() * Math.PI * 2;
-    const target = f.root.position.clone().add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(1.4));
-    target.setY(0).clampLength(0, ISLAND_RADIUS - 1.1);
+    const target = f.root.position.clone().add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(1.4 * f.size));
+    target.setY(0).clampLength(0, ISLAND_RADIUS - 1.2 * f.size);
     f.hopTo(target);
   },
 };
