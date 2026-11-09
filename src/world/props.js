@@ -223,14 +223,14 @@ export function tree(bake, rng, x, y, z, { crown, trunk, size = 1 }) {
 }
 
 // A big, old tree leaning out over the water, roots splayed into the shallows.
-export function leaningTree(bake, rng, x, z, { crown, trunk, lean = 0.35, turn = 0, size = 1 }) {
+export function leaningTree(bake, rng, x, z, { crown, trunk, lean = 0.35, turn = 0, size = 1, y = WATER_Y }) {
   const h = 7 * size;
   const tilt = new THREE.Euler(0, turn, -lean, 'YXZ');
   bake.add(new THREE.CylinderGeometry(0.45 * size, 0.9 * size, h, 7, 2).translate(0, h / 2, 0), trunk, {
-    position: v3(x, WATER_Y - 0.1, z),
+    position: v3(x, y - 0.1, z),
     rotation: tilt,
   });
-  const top = v3(0, h, 0).applyEuler(tilt).add(v3(x, WATER_Y, z));
+  const top = v3(0, h, 0).applyEuler(tilt).add(v3(x, y, z));
   // A fork: two thick branches splitting off near the top.
   for (const side of [-1, 1]) {
     const branch = new THREE.Euler(side * 0.5, turn, -lean + side * 0.45, 'YXZ');
@@ -242,7 +242,7 @@ export function leaningTree(bake, rng, x, z, { crown, trunk, lean = 0.35, turn =
   for (let i = 0; i < 5; i++) {
     const a = turn + (i / 5) * Math.PI * 2;
     bake.add(blob(rng, { detail: 0, rough: 0.2, sx: 0.9 * size, sy: 0.35 * size, sz: 0.4 * size }), trunk, {
-      position: v3(x + Math.cos(a) * 0.9 * size, WATER_Y, z + Math.sin(a) * 0.9 * size),
+      position: v3(x + Math.cos(a) * 0.9 * size, y, z + Math.sin(a) * 0.9 * size),
       rotation: new THREE.Euler(0, -a, -0.3),
     });
   }
@@ -276,17 +276,6 @@ export function stump(bake, rng, x, z, { bark, wood }) {
   bake.add(new THREE.CylinderGeometry(0.42, 0.42, 0.04, 7), wood, { position: v3(x, 0.56, z) });
 }
 
-// Far shoreline: long low banks along the horizon, so the swamp seems to go on into the haze.
-export function distantBank(bake, rng, { from, to, dist, height = 0.35, mat }) {
-  for (let a = from; a < to; a += 0.12 + rng() * 0.1) {
-    const d = dist + (rng() - 0.5) * 3;
-    bake.add(blob(rng, { detail: 0, rough: 0.2, sx: 3 + rng() * 2, sy: height * (0.5 + rng() * 0.5), sz: 2.2 }), mat, {
-      position: v3(Math.cos(a) * d, WATER_Y - 0.05, Math.sin(a) * d),
-      rotation: new THREE.Euler(0, -a, 0),
-    });
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Lily pads float on their own (not baked) because they bob about.
 export function lilyPads(parent, rng, spots, { mat, flower }) {
@@ -317,7 +306,7 @@ export function lilyPads(parent, rng, spots, { mat, flower }) {
 }
 
 // Scatter lily pad spots around, staying clear of islands and each other.
-export function padSpots(rng, count, { minR, maxR, islands, centre = v3(0, 0, 0), avoid = [] }) {
+export function padSpots(rng, count, { minR, maxR, islands, lake, centre = v3(0, 0, 0), avoid = [] }) {
   const spots = [];
   for (let tries = 0; spots.length < count && tries < count * 40; tries++) {
     const a = rng() * Math.PI * 2;
@@ -325,11 +314,97 @@ export function padSpots(rng, count, { minR, maxR, islands, centre = v3(0, 0, 0)
     const s = { x: centre.x + Math.cos(a) * d, z: centre.z + Math.sin(a) * d, r: 0.45 + rng() * 0.55 };
     const pt = v3(s.x, 0, s.z);
     if (islands.some((isl) => isl.inset(pt) > -s.r - 0.6)) continue;
+    if (lake && !lake.inLake(pt, s.r + 0.8)) continue;
     if (spots.some((o) => Math.hypot(o.x - s.x, o.z - s.z) < o.r + s.r + 0.3)) continue;
     if (avoid.some((o) => Math.hypot(o.x - s.x, o.z - s.z) < o.r + s.r)) continue;
     spots.push(s);
   }
   return spots;
+}
+
+// ---------------------------------------------------------------------------
+// A little round hut with a thick, droopy moss roof, a round door, a warm window and a
+// crooked chimney. Faces +z.
+export function mossyHut(rng, { wall = '#a8957a', wall2 = '#978368', moss = ['#7f9e4c', '#8dab55', '#6f8d42'], door = '#5a4632' } = {}) {
+  const group = new THREE.Group();
+  const add = (geo, mat, pos, rot) => {
+    const m = new THREE.Mesh(geo, mat);
+    if (pos) m.position.copy(pos);
+    if (rot) m.rotation.copy(rot);
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+    return m;
+  };
+
+  // Walls: a squat, slightly bulging drum of stones.
+  const wallGeo = new THREE.CylinderGeometry(1.55, 1.75, 1.5, 11, 3).toNonIndexed();
+  lumpyPositions(wallGeo, rng, 0.05);
+  const wc = [new THREE.Color(wall), new THREE.Color(wall2)];
+  colorFaces(wallGeo, () => wc[rng() < 0.6 ? 0 : 1]);
+  add(wallGeo, flatMaterial(0xffffff, { vertexColors: true }), v3(0, 0.72, 0));
+
+  // Roof: a big lumpy dome that droops over the walls, mossy with darker patches.
+  const roofGeo = blob(rng, { detail: 2, rough: 0.1, sx: 2.25, sy: 1.5, sz: 2.25 });
+  const rp = roofGeo.attributes.position;
+  for (let i = 0; i < rp.count; i++) {
+    let y = rp.getY(i);
+    if (y < 0) y *= 0.25; // flatten the underside into an overhanging brim
+    rp.setY(i, y);
+  }
+  roofGeo.computeVertexNormals();
+  const mc = moss.map((c) => new THREE.Color(c));
+  const patches = Array.from({ length: 6 }, () => v3((rng() - 0.5) * 3.5, 0.3 + rng() * 1.2, (rng() - 0.5) * 3.5));
+  colorFaces(roofGeo, (c) => (patches.some((q) => q.distanceTo(c) < 0.55) ? mc[2] : mc[rng() < 0.7 ? 0 : 1]));
+  add(roofGeo, flatMaterial(0xffffff, { vertexColors: true }), v3(0, 1.55, 0));
+
+  // Chimney, leaning a bit.
+  add(new THREE.CylinderGeometry(0.2, 0.26, 1.1, 6), flatMaterial(wall2), v3(0.8, 2.8, -0.5), new THREE.Euler(0, 0, -0.15));
+  add(blob(rng, { detail: 0, rough: 0.2, sx: 0.3, sy: 0.12, sz: 0.3 }), flatMaterial(moss[0]), v3(0.88, 3.36, -0.5));
+
+  // Round-topped door.
+  const ds = new THREE.Shape();
+  ds.moveTo(-0.38, 0);
+  ds.lineTo(-0.38, 0.6);
+  ds.absarc(0, 0.6, 0.38, Math.PI, 0, true);
+  ds.lineTo(0.38, 0);
+  const doorMesh = add(new THREE.ExtrudeGeometry(ds, { depth: 0.08, bevelEnabled: false, curveSegments: 5 }), flatMaterial(door), v3(0, 0.02, 1.62));
+  doorMesh.rotation.x = -0.06;
+  add(new THREE.IcosahedronGeometry(0.05, 0), flatMaterial('#d8c08e'), v3(0.22, 0.5, 1.72));
+
+  // A small round window glowing warm, as if someone left a lamp on.
+  const win = add(new THREE.CircleGeometry(0.26, 8), flatMaterial('#ffe2a0', { emissive: '#d9a24a', emissiveIntensity: 0.6 }), v3(-0.95, 0.95, 1.33));
+  win.rotation.y = -0.6;
+  const frame = add(new THREE.TorusGeometry(0.28, 0.05, 3, 8), flatMaterial(door), v3(-0.95, 0.95, 1.34));
+  frame.rotation.y = -0.6;
+
+  // A mossy stepping stone in front of the door.
+  add(blob(rng, { detail: 0, rough: 0.25, sx: 0.55, sy: 0.12, sz: 0.4 }), flatMaterial('#9c9884'), v3(0, 0.02, 2.25));
+  group.userData.step = v3(0, 0.12, 2.25);
+  return group;
+}
+
+function lumpyPositions(geo, rng, amount) {
+  const p = geo.attributes.position;
+  const offs = new Map();
+  for (let i = 0; i < p.count; i++) {
+    const key = `${p.getX(i).toFixed(3)},${p.getY(i).toFixed(3)},${p.getZ(i).toFixed(3)}`;
+    if (!offs.has(key)) offs.set(key, 1 + (rng() - 0.5) * amount * 2);
+    const k = offs.get(key);
+    p.setX(i, p.getX(i) * k);
+    p.setZ(i, p.getZ(i) * k);
+  }
+  geo.computeVertexNormals();
+}
+
+// Mushrooms: a stubby stem and a flat-ish cap.
+export function mushrooms(bake, rng, x, y, z, { cap, stem, count = 3 }) {
+  for (let i = 0; i < count; i++) {
+    const px = x + (rng() - 0.5) * 0.5;
+    const pz = z + (rng() - 0.5) * 0.5;
+    const h = 0.12 + rng() * 0.15;
+    bake.add(new THREE.CylinderGeometry(0.035, 0.045, h, 5).translate(0, h / 2, 0), stem, { position: v3(px, y, pz) });
+    bake.add(new THREE.IcosahedronGeometry(0.11 + rng() * 0.06, 0), cap, { position: v3(px, y + h, pz), scale: v3(1, 0.45, 1) });
+  }
 }
 
 // ---------------------------------------------------------------------------
