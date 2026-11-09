@@ -4,6 +4,11 @@ import { blob, colorFaces, flatMaterial } from './shapes.js';
 
 // Everything that makes one frog look like itself. Later, the frog workshop will
 // create and approve these recipes; for now there is one hand-picked frog.
+// How big frogs are in the world. Every frog is modelled about 2.4 units wide and
+// 1.4 tall, then shrunk by this (and by its own recipe.size, if it has one), so the
+// ponds, reeds and huts can feel big around them. Hop heights and reach scale with it.
+export const FROG_SCALE = 0.5;
+
 export const FIRST_FROG = {
   name: 'Pip',
   seed: 11,
@@ -34,6 +39,8 @@ export class Frog {
     this.pokeSquish = new THREE.Group();
     this.pokeSquish.matrixAutoUpdate = false;
     this.root.add(this.pokeSquish);
+    this.size = FROG_SCALE * (recipe.size ?? 1);
+    this.root.scale.setScalar(this.size);
     this.squash = new THREE.Group();
     this.pokeSquish.add(this.squash);
     this.parts = []; // meshes the pointer can touch
@@ -206,7 +213,7 @@ export class Frog {
 
   hopTo(point) {
     if (this.hop) return;
-    this.startHop(point.clone(), 0.9, 0.55);
+    this.startHop(point.clone(), 0.9 * this.size, 0.55);
   }
 
   startHop(to, height, duration) {
@@ -268,6 +275,16 @@ export class Frog {
     const fromAnchor = new THREE.Matrix4().makeTranslation(-a.x, -a.y, -a.z);
     this.pokeSquish.matrix.copy(toAnchor).multiply(m).multiply(fromAnchor);
     this.pokeSquish.matrixWorldNeedsUpdate = true;
+  }
+
+  // Height of the top of the head above the frog's feet, in world units.
+  get headHeight() {
+    return 1.6 * this.size;
+  }
+
+  // Furthest a single hop goes, in world units.
+  get hopReach() {
+    return 3.2 * this.size;
   }
 
   get isHappy() {
