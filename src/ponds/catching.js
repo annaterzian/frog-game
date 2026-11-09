@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../rng.js';
 import {
-  Baker, makeWater, makeIsland, landClamper, grassClump, reedBed, rock, tree, log, leaningTree,
+  Baker, makeWater, makeIsland, landClamper, grassClump, reedBed, rock, tree, treeWall, bush, fern, wildflower,
+  log, leaningTree,
   flowers, lilyPads, padSpots, signpost, swayMaterial, flatMaterial, WATER_Y,
 } from '../world/props.js';
 import { makeLakeLand } from '../world/terrain.js';
@@ -109,10 +110,36 @@ export function createCatchingPond() {
     const p = land.shorePoint(a, 5 + rng() * 7);
     tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size: 0.9 + rng() * 0.4 });
   }
-  for (let i = 0; i < 190; i++) {
-    const p = land.shorePoint(rng() * Math.PI * 2, 14 + rng() * 32);
-    if (p.z > 8 && Math.abs(p.x) < 24) continue; // keep the view from the camera open
+  const behindCamera = (p) => p.z > 6 && Math.abs(p.x) < 22;
+  treeWall(bake, rng, land, { from: 13.5, depth: 6, spacing: 2.4, crown, trunk, skip: behindCamera });
+  for (let i = 0; i < 170; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 19 + rng() * 26);
+    if (behindCamera(p)) continue;
     tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size: 1 + rng() * 0.6 });
+  }
+
+  // ---- Undergrowth: bushes and ferns along the edge of the woods, some berry bushes, and
+  // a few bushes and tall wildflowers dotted along the banks between the reed beds.
+  const bushMats = ['#58793c', '#668a44', '#73944c'].map((c) => flatMaterial(c));
+  const berries = flatMaterial('#3f4f8f');
+  const fernMat = swayMaterial('#789b46', { sway: 0.04 });
+  for (let i = 0; i < 120; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 11.5 + rng() * 2.5);
+    if (behindCamera(p)) continue;
+    if (rng() < 0.65) bush(bake, rng, p.x, p.y, p.z, { mats: bushMats, size: 0.9 + rng() * 0.8, berries: rng() < 0.2 ? berries : null });
+    else fern(bake, rng, p.x, p.y, p.z, { mat: fernMat, size: 0.9 + rng() * 0.5 });
+  }
+  for (let i = 0; i < 22; i++) {
+    const a = rng() * Math.PI * 2;
+    if (Math.abs(a - Math.PI / 2) < 0.3) continue;
+    const p = land.shorePoint(a, 1 + rng() * 2.5);
+    if (rng() < 0.6) bush(bake, rng, p.x, p.y, p.z, { mats: bushMats, size: 0.7 + rng() * 0.5 });
+    else fern(bake, rng, p.x, p.y, p.z, { mat: fernMat });
+  }
+  const bells = flatMaterial('#e8d36a');
+  for (let i = 0; i < 16; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 1.5 + rng() * 9);
+    wildflower(bake, rng, p.x, p.y, p.z, { petal: bells, stem: grass[1] });
   }
 
   bake.build(group);

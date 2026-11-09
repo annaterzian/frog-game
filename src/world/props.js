@@ -222,6 +222,73 @@ export function tree(bake, rng, x, y, z, { crown, trunk, size = 1 }) {
   }
 }
 
+// A thick ring of trees around a pond's meadow, several rows deep, so the woods read as a
+// wall. `skip(point)` can leave gaps (for example where the camera stands).
+export function treeWall(bake, rng, land, { from, depth = 8, spacing = 1.8, crown, trunk, skip = () => false }) {
+  for (let d = from; d < from + depth; d += spacing * (1.1 + rng() * 0.4)) {
+    const around = 2 * Math.PI * (land.radius + d);
+    const n = Math.round(around / spacing);
+    for (let i = 0; i < n; i++) {
+      const a = ((i + rng() * 0.8) / n) * Math.PI * 2;
+      const p = land.shorePoint(a, d + (rng() - 0.5) * spacing);
+      if (skip(p)) continue;
+      // The front row is a bit shorter, so the wall steps up into the woods behind it.
+      const size = (d - from < spacing ? 0.75 : 0.95) + rng() * 0.5;
+      tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size });
+    }
+  }
+}
+
+// Bushes: a cluster of lumpy, flat-bottomed blobs. Some have little berries.
+export function bush(bake, rng, x, y, z, { mats, size = 1, berries = null }) {
+  const lobes = 2 + Math.floor(rng() * 3);
+  for (let i = 0; i < lobes; i++) {
+    const r = (0.45 + rng() * 0.35) * size;
+    const g = blob(rng, { detail: 0, rough: 0.3, sx: r * 1.2, sy: r * 0.85, sz: r * 1.1 });
+    const pos = g.attributes.position;
+    for (let k = 0; k < pos.count; k++) if (pos.getY(k) < -r * 0.3) pos.setY(k, -r * 0.3); // sit flat on the ground
+    g.computeVertexNormals();
+    const px = x + (rng() - 0.5) * size * 1.1;
+    const pz = z + (rng() - 0.5) * size * 1.1;
+    bake.add(g, mats[Math.floor(rng() * mats.length)], { position: v3(px, y + r * 0.3, pz), rotation: new THREE.Euler(0, rng() * 6, 0) });
+    if (berries) {
+      for (let b = 0; b < 4; b++) {
+        const a = rng() * Math.PI * 2;
+        const up = 0.2 + rng() * 0.6;
+        bake.add(new THREE.IcosahedronGeometry(0.06 * size, 0), berries, {
+          position: v3(px + Math.cos(a) * r * 1.05 * Math.cos(up), y + r * 0.3 + Math.sin(up) * r * 0.8, pz + Math.sin(a) * r * 0.95 * Math.cos(up)),
+        });
+      }
+    }
+  }
+}
+
+// Ferns: a rosette of long, flat fronds arching outwards.
+export function fern(bake, rng, x, y, z, { mat, size = 1 }) {
+  const n = 6 + Math.floor(rng() * 4);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + rng() * 0.4;
+    bake.add(bladeGeo, mat, {
+      position: v3(x, y, z),
+      rotation: new THREE.Euler(0.9 + rng() * 0.4, a, 0, 'YXZ'),
+      scale: v3(3 * size, (0.7 + rng() * 0.3) * size, 1),
+    });
+  }
+}
+
+// Tall wildflowers: a spike of small bells up a stem, standing above the grass.
+export function wildflower(bake, rng, x, y, z, { petal, stem, count = 3 }) {
+  for (let i = 0; i < count; i++) {
+    const px = x + (rng() - 0.5) * 0.6;
+    const pz = z + (rng() - 0.5) * 0.6;
+    const h = 0.7 + rng() * 0.5;
+    bake.add(new THREE.CylinderGeometry(0.015, 0.02, h, 3).translate(0, h / 2, 0), stem, { position: v3(px, y, pz) });
+    for (let k = 0; k < 4; k++) {
+      bake.add(new THREE.ConeGeometry(0.06 - k * 0.008, 0.1, 5), petal, { position: v3(px, y + h * (0.6 + k * 0.12), pz), rotation: new THREE.Euler(Math.PI, k, 0) });
+    }
+  }
+}
+
 // A big, old tree leaning out over the water, roots splayed into the shallows.
 export function leaningTree(bake, rng, x, z, { crown, trunk, lean = 0.35, turn = 0, size = 1, y = WATER_Y }) {
   const h = 7 * size;

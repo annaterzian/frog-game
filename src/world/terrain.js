@@ -92,6 +92,8 @@ export function makeLakeLand(rng, { x = 0, z = 0, radius, phase = 0, meadow = 12
     // For the water shader: a negative radius means "the water is inside this outline".
     shore: { x, z, radius: -radius, phase },
     centre: new THREE.Vector3(x, 0, z),
+    radius,
+    meadow,
     // How far a point is inside the frogs' meadow (negative: in the lake, or out in the hills).
     inset(p) {
       const { d } = at(p.x, p.z);
