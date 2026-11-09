@@ -24,15 +24,15 @@ export class Effects {
     this.items.push({ mesh, life, age: 0, tick });
   }
 
-  heart(at) {
+  heart(at, size = 1) {
     const mesh = new THREE.Mesh(this.heartGeo, flatMaterial('#f07f8a', { transparent: true }));
-    mesh.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0, (Math.random() - 0.5) * 0.4));
+    mesh.position.copy(at).add(new THREE.Vector3((Math.random() - 0.5) * 0.8 * size, 0, (Math.random() - 0.5) * 0.4 * size));
     const drift = (Math.random() - 0.5) * 0.6;
     this.spawn(mesh, 1.3, (m, p, dt) => {
       m.position.y += dt * 1.1;
       m.position.x += drift * dt;
       m.rotation.y = Math.sin(p * 6) * 0.5;
-      m.scale.setScalar(0.35 * Math.min(1, p * 6));
+      m.scale.setScalar(0.35 * size * Math.min(1, p * 6));
       m.material.opacity = 1 - p * p;
     });
   }
@@ -46,16 +46,16 @@ export class Effects {
     });
   }
 
-  dust(at, strength = 1) {
+  dust(at, size = 1) {
     for (let i = 0; i < 6; i++) {
       const mesh = new THREE.Mesh(this.puffGeo, flatMaterial('#e3dcc0', { transparent: true }));
       const a = (i / 6) * Math.PI * 2 + Math.random();
       const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-      mesh.position.copy(at).addScaledVector(dir, 0.7).setY(0.1);
+      mesh.position.copy(at).addScaledVector(dir, 0.7 * size).setY(0.1 * size);
       this.spawn(mesh, 0.5, (m, p, dt) => {
-        m.position.addScaledVector(dir, dt * 1.5);
+        m.position.addScaledVector(dir, dt * 1.5 * size);
         m.position.y += dt * 0.4;
-        m.scale.setScalar(0.12 * strength * (1 - p) + 0.02);
+        m.scale.setScalar((0.12 * (1 - p) + 0.02) * size);
         m.material.opacity = 0.9 * (1 - p);
       });
     }

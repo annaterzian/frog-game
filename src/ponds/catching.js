@@ -174,10 +174,10 @@ export function createCatchingPond() {
     frogs: [],
     frogSpots,
     clampToLand: landClamper([land, ...islands]),
-    camera: { position: new THREE.Vector3(0, 11, 13), lookAt: new THREE.Vector3(0, 0, -6), pan: 20 },
+    camera: { position: new THREE.Vector3(0, 9.5, 12), lookAt: new THREE.Vector3(0, 0, -10), pan: 18 },
     look: {
       haze: '#d6dcb6',
-      fog: [8, 55],
+      fog: [12, 60],
       sky: 0xf6f2d6,
       groundLight: 0x4a6b4a,
       sun: 0xffe2b4,
