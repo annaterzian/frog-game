@@ -54,20 +54,27 @@ function applyLook(pond) {
   hintEl.textContent = pond.hint;
   const other = pond.travel[0].to;
   travelBtn.textContent = other === 'home' ? '← Home pond' : 'Catching pond →';
+  view.pan.set(0, 0, 0);
+  view.zoom = 1;
   fitCamera();
   for (const f of pond.frogs) f.lookTarget.copy(camera.position);
 }
+
+// Camera: each pond gives a home framing; dragging the ground pans around and the
+// mouse wheel zooms, within limits the pond sets.
+const view = { pan: new THREE.Vector3(), zoom: 1 };
 
 function fitCamera() {
   const pond = travel.current();
   const aspect = window.innerWidth / window.innerHeight;
   camera.aspect = aspect;
-  // Pull back on tall phone screens so the island still fits.
-  const pull = aspect < 1 ? 1 / Math.max(aspect, 0.62) : 1;
+  // Pull back on tall phone screens so the scene still fits.
+  const pull = (aspect < 1 ? 1 / Math.max(aspect, 0.62) : 1) * view.zoom;
   const { position, lookAt } = pond.camera;
+  const target = lookAt.clone().add(view.pan);
   const offset = position.clone().sub(lookAt).multiplyScalar(pull);
-  camera.position.copy(lookAt).add(offset);
-  camera.lookAt(lookAt);
+  camera.position.copy(target).add(offset);
+  camera.lookAt(target);
   // Keep the haze starting just behind the action, however far back the camera is.
   const dist = offset.length();
   scene.fog.near = dist + pond.look.fog[0];
@@ -76,21 +83,41 @@ function fitCamera() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+function panBy(dx, dy) {
+  const pond = travel.current();
+  // Screen pixels to ground units: further away means each pixel covers more ground.
+  const k = camera.position.distanceTo(pond.camera.lookAt.clone().add(view.pan)) * 0.0016;
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize();
+  const forward = new THREE.Vector3(-right.z, 0, right.x); // towards the screen's top
+  view.pan.addScaledVector(right, -dx * k).addScaledVector(forward, -dy * k);
+  view.pan.clampLength(0, pond.camera.pan ?? 0);
+  fitCamera();
+}
+
 const travel = createTravel({ scene, ponds, applyLook, fadeEl: document.getElementById('fade') });
 window.addEventListener('resize', fitCamera);
+renderer.domElement.addEventListener(
+  'wheel',
+  (e) => {
+    e.preventDefault();
+    view.zoom = THREE.MathUtils.clamp(view.zoom * Math.exp(e.deltaY * 0.001), 0.55, 1.6);
+    fitCamera();
+  },
+  { passive: false }
+);
 travelBtn.addEventListener('click', () => travel.goTo(travel.current().travel[0].to));
 
 // ---- Your frogs, saved in this browser. Everyone starts with Pip.
 const collection = new Collection();
-if (!collection.frogs.length) collection.add(recipeById('pip'));
+if (!collection.frogs.length) collection.add(recipeById('pip'), 'Pip');
 const fx = new Effects(scene);
 const ui = createUI(collection);
 const home = setupHome({ pond: ponds.home, collection, ui });
-const catching = setupCatching({ pond: ponds.catch, collection, fx, ui, camera });
+const catching = setupCatching({ pond: ponds.catch, collection, fx, ui, camera, canvas: renderer.domElement });
 travel.onEnter((name) => {
   if (name === 'home') home.sync();
   if (name === 'catch') catching.enter();
-  ui.hideCard();
+  ui.setPond(name);
 });
 travel.onLeave((name) => {
   if (name === 'catch') catching.leave();
@@ -114,10 +141,10 @@ function castAt(e) {
 }
 
 function frogUnderPointer(pond) {
-  let best = null;
-  for (const frog of pond.frogs) {
-    const hit = raycaster.intersectObjects(frog.parts, false)[0];
-    if (hit && (!best || hit.distance < best.hit.distance)) best = { frog, hit };
+  let best = { frog: null, hit: null };
+  for (const f of pond.frogs) {
+    const hit = raycaster.intersectObjects(f.parts, false)[0];
+    if (hit && (!best.hit || hit.distance < best.hit.distance)) best = { frog: f, hit };
   }
   return best;
 }
@@ -128,10 +155,10 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   castAt(e);
   renderer.domElement.setPointerCapture(e.pointerId);
   if (pond.input?.down?.(e, raycaster)) return;
-  // Ponds with their own input (the catching pond) don't get the default poke and pet.
-  const under = pond.input ? null : frogUnderPointer(pond);
-  if (under) under.frog.press(under.hit); // dents the spot you touch
-  Object.assign(press, { active: true, frog: under?.frog ?? null, moved: 0, x: e.clientX, y: e.clientY });
+  const { frog, hit } = frogUnderPointer(pond);
+  if (frog) home.tapped(frog);
+  if (frog) frog.press(hit); // dents the spot you touch
+  Object.assign(press, { active: true, frog, moved: 0, x: e.clientX, y: e.clientY });
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
@@ -148,16 +175,23 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   const step = Math.hypot(e.clientX - press.x, e.clientY - press.y);
   press.moved += step;
   if (press.frog && press.moved > 12) press.frog.release(); // it's a rub now, not a press
+  const dx = e.clientX - press.x;
+  const dy = e.clientY - press.y;
   press.x = e.clientX;
   press.y = e.clientY;
+  // Dragging on anything but a frog moves the camera around the pond.
+  if (!press.frog) {
+    if (press.moved > 12) panBy(dx, dy);
+    return;
+  }
   // Rubbing back and forth over a frog counts as petting.
   const f = press.frog;
   if (f && raycaster.intersectObjects(f.parts, false).length > 0) {
-    const fondness = home.pet(f, step);
+    const fondness = home.pet(f, step); // grows the saved bond; well-bonded frogs enjoy it sooner
     f.pet(step * 0.0025 * fondness);
     if (f.isHappy && performance.now() - press.lastHeart > 280) {
       press.lastHeart = performance.now();
-      fx.heart(home.headOf(f));
+      fx.heart(f.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, (f.headHeight ?? 1.9) * f.root.scale.y, 0)));
     }
   }
 });
@@ -177,7 +211,6 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (press.moved > 12) return; // that was a drag, not a tap
   if (press.frog) {
     press.frog.poke();
-    home.tapped(press.frog);
     return;
   }
   // Tapped a signpost: off we go.
@@ -187,7 +220,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
       return;
     }
   }
-  if (pond.input) return;
+  if (pond.input) return; // the catching pond's frogs are wild, they don't come when called
   // Tapped somewhere else: the nearest frog hops towards it, staying on land.
   const hit = raycaster.intersectObjects([...pond.ground, pond.water], false)[0];
   if (!hit) return;
@@ -195,8 +228,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const frog = nearestFrog(pond, hit.point);
   if (!frog) return;
   const from = frog.root.position.clone().setY(0);
-  // Long trips become a single big hop of at most 3.2 units.
-  const offset = hit.point.clone().setY(0).sub(from).clampLength(0, 3.2);
+  // Long trips become a single big hop.
+  const offset = hit.point.clone().setY(0).sub(from).clampLength(0, frog.hopReach ?? 3.2);
   frog.hopTo(pond.clampToLand(from.add(offset)));
 });
 
@@ -214,7 +247,7 @@ const events = {
     fx.dust(pos.clone(), height);
   },
   wander(f) {
-    if (f.wander) return f.wander(); // some frogs (wild ones) have their own idea of wandering
+    if (f.wander) return f.wander(); // wild frogs have their own idea of wandering
     const a = Math.random() * Math.PI * 2;
     const target = f.root.position.clone().add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(1.4));
     f.hopTo(travel.current().clampToLand(target));
@@ -228,7 +261,7 @@ renderer.setAnimationLoop(() => {
   worldTime.value += dt;
   const pond = travel.current();
   pond.update(dt, worldTime.value);
-  if (pond === ponds.catch) catching.update(dt);
+  if (pond === ponds.catch) catching.update(dt, raycaster);
   for (const f of pond.frogs) f.update(dt, events);
   fx.update(dt);
   renderer.render(scene, camera);

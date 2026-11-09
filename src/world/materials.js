@@ -32,6 +32,7 @@ export function swayMaterial(color, { sway = 0.06, ...extra } = {}) {
 // Patterned swamp water: two-tone patches, a branching web of pale veins (like light
 // caught on the surface), and a pale shallow band with a foam line around every island.
 // `shores` is a list of islands ({ x, z, radius, phase }) so the foam follows their wobbly edges.
+// A lake shore is passed with a negative radius: there the water is inside the outline.
 export function waterMaterial({ deep, light, vein, shallow, foam, shores = [] }) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 0.4 });
   const MAX = 8;
@@ -91,6 +92,11 @@ export function waterMaterial({ deep, light, vein, shallow, foam, shores = [] })
         float shoreDist(vec2 p, vec4 s) {
           vec2 d = p - s.xy;
           float a = atan(d.y, d.x);
+          if (s.z < 0.0) {
+            // A lake: water is inside the outline. Must match lakeRadiusAt() in terrain.js.
+            float lw = 1.0 + sin(a * 3.0 + s.w) * 0.1 + sin(a * 5.0 + s.w * 2.0) * 0.05;
+            return -s.z * lw - length(d);
+          }
           float wob = 1.0 + sin(a * 3.0 + s.w) * 0.06 + sin(a * 7.0 + s.w * 2.0) * 0.03;
           return length(d) - (s.z + 0.15) * wob; // the island's sloped side meets the water a bit past its top edge
         }`

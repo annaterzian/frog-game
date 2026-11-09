@@ -2,30 +2,41 @@ import * as THREE from 'three';
 import { mulberry32 } from '../rng.js';
 import {
   Baker, makeWater, makeIsland, landClamper, grassClump, reedBed, rock, tree, log, leaningTree,
-  distantBank, lilyPads, padSpots, signpost, swayMaterial, flatMaterial, WATER_Y,
+  flowers, lilyPads, padSpots, signpost, swayMaterial, flatMaterial, WATER_Y,
 } from '../world/props.js';
+import { makeLakeLand } from '../world/terrain.js';
 
-// The catching pond: wilder and bigger than home. A scatter of little islands, a log bridge,
-// a huge old tree leaning over the water, thick reeds and lots of lily pads for wild frogs
-// to sit on. A bit greener and mistier, so it feels like somewhere you go out to.
+// The catching pond: a big, wide pond out in the countryside, ringed by meadow and woods.
+// Bigger and livelier than home: two little islands, reed beds along the banks, a log in
+// the water, an old tree leaning out over the shore, and lots of lily pads for wild frogs.
 export function createCatchingPond() {
   const rng = mulberry32(17);
   const group = new THREE.Group();
   const bake = new Baker();
 
+  const land = makeLakeLand(rng, {
+    x: 0, z: -18, radius: 16, phase: 4.1, meadow: 13, hills: 8,
+    colors: {
+      grass: ['#86a64f', '#90ae56', '#9bb65e', '#a6bd66'],
+      hill: ['#7f9e55', '#8aa75c', '#96b066'],
+      bank: '#bba371',
+      bed: '#477a64',
+    },
+  });
+  group.add(land.mesh);
+
   const top = ['#8fae5c', '#82a352', '#9cb866'].map((c) => new THREE.Color(c));
   const side = new THREE.Color('#a48c5f');
   const islands = [
-    makeIsland(rng, { x: 0, z: 0.5, radius: 3, phase: 2, top, side }), // where you arrive
-    makeIsland(rng, { x: -6.6, z: -3.2, radius: 2.4, phase: 4, top, side }),
-    makeIsland(rng, { x: 5.4, z: -4.2, radius: 2.1, phase: 0.5, top, side }),
-    makeIsland(rng, { x: -1.5, z: -9.5, radius: 2.7, phase: 5.5, top, side }),
+    makeIsland(rng, { x: -7, z: -20, radius: 2.6, phase: 4, top, side }),
+    makeIsland(rng, { x: 6.5, z: -13, radius: 1.8, phase: 0.5, top, side }),
   ];
   for (const isl of islands) group.add(isl.mesh);
 
   const water = makeWater(
     { deep: '#4a8a7c', light: '#5c9a88', vein: '#82b8a2', shallow: '#78ac94', foam: '#dcebd6' },
-    islands
+    [land.shore, ...islands],
+    120
   );
   group.add(water);
 
@@ -33,10 +44,10 @@ export function createCatchingPond() {
   const reeds = ['#97b257', '#748f42', '#a9bd6a'].map((c) => swayMaterial(c, { sway: 0.035 }));
   const cattail = { stem: swayMaterial('#809b49', { sway: 0.012 }), head: swayMaterial('#6f4a2c', { sway: 0.012 }), leaf: reeds[0] };
   const rockMat = flatMaterial('#979484');
-  const crown = ['#6c8f55', '#7b9a5e', '#8aa86a'].map((c) => flatMaterial(c));
+  const crown = ['#6c8f55', '#7b9a5e', '#8aa86a', '#94b070'].map((c) => flatMaterial(c));
   const trunk = flatMaterial('#6f5c45');
 
-  // ---- Islands: shaggy grass rims, a few rocks.
+  // ---- Islands: shaggy grass rims, a rock or two.
   for (const isl of islands) {
     const rim = Math.round(isl.radius * 7);
     for (let i = 0; i < rim; i++) {
@@ -44,95 +55,107 @@ export function createCatchingPond() {
       const p = isl.clamp(new THREE.Vector3(isl.x + Math.cos(a) * 9, 0, isl.z + Math.sin(a) * 9), 0.15 + rng() * 0.5);
       grassClump(bake, rng, p.x, 0, p.z, { mats: grass, height: 0.7 + rng() * 0.6, count: 8 });
     }
-    for (let i = 0; i < 2; i++) {
-      const p = isl.randomSpot(rng, 0.7);
-      rock(bake, rng, p.x, 0, p.z, rockMat, 0.7 + rng() * 0.8);
-    }
+    const p = isl.randomSpot(rng, 0.7);
+    rock(bake, rng, p.x, 0, p.z, rockMat, 0.8 + rng() * 0.6);
   }
 
-  // ---- A log bridge from the arrival island to the west island, and a log lying in the water.
+  // ---- Reed beds in patches along the banks.
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + (rng() - 0.5) * 0.3;
+    if (Math.abs(a - Math.PI / 2) < 0.35) continue; // leave the near bank open so you can see in
+    const p = land.shorePoint(a, -0.4 - rng() * 0.6);
+    reedBed(bake, rng, p.x, WATER_Y, p.z, { cattails: 3 + Math.floor(rng() * 3), grass: 3, spread: 2, mats: { cattail, reeds } });
+  }
+  for (let i = 0; i < 70; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 0.2 + rng() * 0.8);
+    grassClump(bake, rng, p.x, p.y, p.z, { mats: grass, height: 0.8, count: 7 });
+  }
+
+  // ---- The meadow around the pond.
+  for (let i = 0; i < 110; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 1 + rng() * 12);
+    grassClump(bake, rng, p.x, p.y, p.z, { mats: grass, height: 0.5 + rng() * 0.6, count: 5 + Math.floor(rng() * 4) });
+  }
+  const petal = flatMaterial('#f4f1e4');
+  const petal2 = flatMaterial('#c9b6e0');
+  const centre = flatMaterial('#d79a3c');
+  for (let i = 0; i < 24; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 1.5 + rng() * 10);
+    flowers(bake, rng, p.x, p.y, p.z, { petal: i % 3 ? petal : petal2, centre, stem: grass[1], count: 3 + Math.floor(rng() * 4) });
+  }
+  for (let i = 0; i < 10; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 0.4 + rng() * 9);
+    rock(bake, rng, p.x, p.y, p.z, rockMat, 0.7 + rng() * 1.2);
+  }
+
+  // ---- A log floating out in the water, and one lying on the bank.
   const logMat = flatMaterial(0xffffff, { vertexColors: true });
   const bark = new THREE.Color('#6f5a42');
   const moss = new THREE.Color('#8aa553');
-  const bridgeFrom = new THREE.Vector3(-2.2, 0.05, -0.6);
-  const bridgeTo = new THREE.Vector3(-4.9, 0.05, -2.3);
-  log(bake, bridgeFrom, bridgeTo, { mat: logMat, bark, moss });
-  const floatFrom = new THREE.Vector3(2.4, WATER_Y, -8.6);
-  const floatTo = new THREE.Vector3(5.6, WATER_Y, -7.2);
+  const floatFrom = new THREE.Vector3(-2.5, WATER_Y, -10);
+  const floatTo = new THREE.Vector3(1.5, WATER_Y, -8.4);
   log(bake, floatFrom, floatTo, { mat: logMat, bark, moss, radius: 0.38 });
+  const bankLog = [land.shorePoint(2.3, 2.5).setY(0.2), land.shorePoint(2.55, 2.2).setY(0.2)];
+  log(bake, bankLog[0], bankLog[1], { mat: logMat, bark, moss, radius: 0.3 });
 
-  // ---- The big leaning tree, roots in the shallows on the right.
-  leaningTree(bake, rng, 9.5, -10, { crown, trunk, lean: -0.6, turn: 0.3, size: 0.75 });
+  // ---- The big old tree on the far right bank, leaning out over the water.
+  const treeAt = land.shorePoint(-0.25, 1.4);
+  leaningTree(bake, rng, treeAt.x, treeAt.z, { crown, trunk, lean: -0.45, turn: 0.2, size: 1, y: treeAt.y });
 
-  // ---- Reed beds all over the edges of the water.
-  const reedSpots = [
-    [-3.6, 2.6], [3.5, 1.9], [-9.4, -1], [-8.8, -5.6], [7.6, -2.6], [7.4, -5.8], [-4.2, -10.4],
-    [1.4, -11.4], [-11, -8], [10.5, -6], [-1.8, -6], [3.5, -11.5],
-  ];
-  for (const [x, z] of reedSpots) {
-    reedBed(bake, rng, x, WATER_Y, z, { cattails: 4 + Math.floor(rng() * 3), grass: 3, spread: 1.5, mats: { cattail, reeds } });
+  // ---- Trees: a few out in the meadow, then woods on the hills all round.
+  for (let i = 0; i < 8; i++) {
+    const a = rng() * Math.PI * 2;
+    if (Math.abs(a - Math.PI / 2) < 0.6) continue;
+    const p = land.shorePoint(a, 5 + rng() * 7);
+    tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size: 0.9 + rng() * 0.4 });
   }
-
-  // ---- Background layers: grassy far banks, then lots of trees going back into the mist.
-  distantBank(bake, rng, { from: Math.PI * 1.02, to: Math.PI * 1.98, dist: 17.5, mat: flatMaterial('#87a35a') });
-  for (let i = 0; i < 40; i++) {
-    const a = Math.PI * (1.04 + rng() * 0.92);
-    const d = 16.5 + rng() * 3;
-    grassClump(bake, rng, Math.cos(a) * d, 0, Math.sin(a) * d, { mats: reeds, height: 1.6, count: 9, spread: 1.2 });
-  }
-  for (let i = 0; i < 60; i++) {
-    const a = Math.PI * (1.0 + rng() * 1.0);
-    const d = 18 + rng() * 18;
-    tree(bake, rng, Math.cos(a) * d, WATER_Y, Math.sin(a) * d, { crown, trunk, size: 1 + rng() * 0.6 });
-  }
-  // Side banks, so the edges of a wide screen aren't open water.
-  for (const sx of [-1, 1]) {
-    for (let i = 0; i < 10; i++) {
-      tree(bake, rng, sx * (16 + rng() * 6), WATER_Y, -2 + rng() * 10, { crown, trunk, size: 0.9 + rng() * 0.5 });
-    }
+  for (let i = 0; i < 190; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 14 + rng() * 32);
+    if (p.z > 8 && Math.abs(p.x) < 24) continue; // keep the view from the camera open
+    tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size: 1 + rng() * 0.6 });
   }
 
   bake.build(group);
 
-  const pads = lilyPads(group, rng, padSpots(rng, 22, { minR: 2.5, maxR: 13, islands, centre: new THREE.Vector3(0, 0, -4) }), {
+  const pads = lilyPads(group, rng, padSpots(rng, 30, { minR: 1, maxR: 17, islands, lake: land, centre: land.centre }), {
     mat: flatMaterial('#74a344'),
     flower: flatMaterial('#f6efd8', { side: THREE.DoubleSide }),
   });
 
   const sign = signpost('home pond', { flip: true });
-  sign.position.set(-1.2, 0, 1.9);
+  sign.position.set(-4, 0, 1.5);
   sign.rotation.y = 0.3;
   group.add(sign);
 
   const frogSpots = [
-    ...islands.flatMap((isl, i) =>
-      Array.from({ length: i === 0 ? 2 : 3 }, () => ({ position: isl.randomSpot(rng, 0.8), kind: 'land' }))
-    ),
-    { position: bridgeFrom.clone().lerp(bridgeTo, 0.5).setY(0.4), kind: 'log' },
+    ...Array.from({ length: 14 }, () => ({ position: land.clamp(land.shorePoint(rng() * Math.PI * 2, 1 + rng() * 6), 1), kind: 'land' })),
+    ...islands.flatMap((isl) => Array.from({ length: 3 }, () => ({ position: isl.randomSpot(rng, 0.8), kind: 'land' }))),
     { position: floatFrom.clone().lerp(floatTo, 0.4).setY(0.25), kind: 'log' },
+    { position: bankLog[0].clone().lerp(bankLog[1], 0.5).setY(0.5), kind: 'log' },
     ...pads.pads.map(({ pad }) => ({ position: pad.position.clone().setY(-0.07), kind: 'pad' })),
   ];
 
   return {
     name: 'catch',
     title: 'Catching pond',
-    hint: 'Wild frogs live here · tap the signpost to go home',
+    hint: 'Wild frogs live here · drag to look around · tap the signpost to go home',
     group,
-    ground: islands.map((i) => i.mesh),
+    ground: [land.mesh, ...islands.map((i) => i.mesh)],
     water,
+    land,
     islands,
     frogs: [],
     frogSpots,
-    clampToLand: landClamper(islands),
-    camera: { position: new THREE.Vector3(0, 8.6, 13.5), lookAt: new THREE.Vector3(0, 0, -3.5) },
+    clampToLand: landClamper([land, ...islands]),
+    camera: { position: new THREE.Vector3(0, 11, 13), lookAt: new THREE.Vector3(0, 0, -6), pan: 20 },
     look: {
-      haze: '#cdd8b2',
-      fog: [3, 26],
-      sky: 0xf4f0d2,
-      groundLight: 0x46684a,
+      haze: '#d6dcb6',
+      fog: [8, 55],
+      sky: 0xf6f2d6,
+      groundLight: 0x4a6b4a,
       sun: 0xffe2b4,
-      sunPosition: new THREE.Vector3(-4, 10, 3),
-      shadowSize: 13,
+      sunPosition: new THREE.Vector3(-8, 16, 6),
+      shadowSize: 22,
     },
     travel: [{ to: 'home', touch: sign.userData.touch }],
     update(dt, t) {
