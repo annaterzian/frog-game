@@ -62,6 +62,7 @@ export class Frog {
     });
     this.body = add(new THREE.Mesh(bodyGeo, flatMaterial(0xffffff, { vertexColors: true })));
     this.body.position.y = 0.5;
+    this.bodyRest = bodyGeo.attributes.position.array.slice(); // undented shape, for poking
 
     // ---- Throat pouch: hidden until the frog croaks.
     this.pouch = add(new THREE.Mesh(blob(rng, { detail: 1, rough: 0.05 }), flatMaterial(bellyCol)));
@@ -121,11 +122,15 @@ export class Frog {
     mouth.position.set(0.06, 0.74, 1.05);
     mouth.rotation.set(-0.2, 0, 0.07);
     this.squash.add(mouth);
+    this.mouth = mouth;
 
     // ---- Behaviour state
     this.time = 0;
     this.squashSpring = { x: 0, v: 0 }; // + is stretched tall, - is squashed flat
     this.wobble = { x: 0, v: 0 };
+    this.annoyed = 0; // 1 right after an eye poke, fades to 0
+    this.annoyedEye = null;
+    this.dent = { x: 0, v: 0, target: 0, center: new THREE.Vector3(), dir: new THREE.Vector3(), part: null };
     this.lookTarget = new THREE.Vector3(0, 1, 10);
     this.happiness = 0; // rises while petted, fades slowly
     this.surprise = 0;
@@ -139,12 +144,42 @@ export class Frog {
   }
 
   // ---- Things the player can do to the frog
+
+  // Finger goes down on the frog: the spot under it dents in and stays in while held.
+  // `hit` is the raycast result (which mesh, where, and which way that face points).
+  press(hit) {
+    if (hit.object === this.body) {
+      this.dent.center.copy(this.body.worldToLocal(hit.point.clone()));
+      this.dent.dir.copy(hit.face.normal).negate();
+      this.dent.part = null;
+    } else {
+      // Eyes, legs, throat: squish that whole little piece instead.
+      let part = hit.object;
+      while (part.parent && part.parent !== this.squash) part = part.parent;
+      if (!part.userData.restScale) part.userData.restScale = part.scale.clone();
+      this.dent.part = part;
+      // Poked in the eye: that's rude. Squeeze it shut, frown, shake head, lean away.
+      const eye = this.eyes.find((e) => e.group === part);
+      if (eye) {
+        this.annoyed = 1;
+        this.annoyedEye = eye;
+      }
+    }
+    this.dent.target = 1;
+    this.dent.v += 8;
+    this.wobble.v += (this.rng() - 0.5) * 1.5; // tiny flinch, not a full-body squash
+  }
+
+  // Finger lifts (or starts rubbing instead): the dent springs back out with a little jiggle.
+  release() {
+    this.dent.target = 0;
+  }
+
+  // A quick tap: the frog is mildly startled. Eyes pop open, pupils shrink.
   poke() {
-    this.squashSpring.v -= 9;
-    this.wobble.v += (this.rng() - 0.5) * 10;
-    this.surprise = 1;
+    this.release();
+    if (this.annoyed <= 0) this.surprise = 1; // an eye poke is annoying, not surprising
     this.idleTimer = 4;
-    if (!this.hop) this.startHop(this.root.position.clone(), 0.45, 0.35);
   }
 
   pet(amount) {
@@ -167,6 +202,38 @@ export class Frog {
     this.squashSpring.v -= 4; // crouch before jumping
   }
 
+  updateDent(dt) {
+    const d = this.dent;
+    // Same spring idea, but pulling towards a target (1 = pressed in, 0 = rest).
+    d.v += (260 * (d.target - d.x) - 14 * d.v) * dt;
+    d.x += d.v * dt;
+    if (Math.abs(d.x) < 0.0005 && Math.abs(d.v) < 0.005 && d.target === 0) {
+      if (d.x === 0) return;
+      d.x = d.v = 0;
+    }
+    if (d.part) {
+      // A small piece just gets a little squished.
+      d.part.scale.copy(d.part.userData.restScale).multiplyScalar(1 - d.x * 0.15);
+      return;
+    }
+    // The body: push nearby vertices inward, most at the touch point, fading out by RADIUS.
+    // Vertices are moved by where they sit at rest, so shared corners move together.
+    const RADIUS = 0.5;
+    const DEPTH = 0.16;
+    const pos = this.body.geometry.attributes.position;
+    const rest = this.bodyRest;
+    for (let i = 0; i < pos.count; i++) {
+      const x = rest[i * 3], y = rest[i * 3 + 1], z = rest[i * 3 + 2];
+      const dist = Math.hypot(x - d.center.x, y - d.center.y, z - d.center.z);
+      const w = dist < RADIUS ? (1 - dist / RADIUS) ** 2 : 0;
+      const push = w * DEPTH * d.x;
+      pos.array[i * 3] = x + d.dir.x * push;
+      pos.array[i * 3 + 1] = y + d.dir.y * push;
+      pos.array[i * 3 + 2] = z + d.dir.z * push;
+    }
+    pos.needsUpdate = true;
+  }
+
   get isHappy() {
     return this.happiness > 0.35;
   }
@@ -180,6 +247,8 @@ export class Frog {
       s.v += (-k * s.x - damp * s.v) * dt;
       s.x += s.v * dt;
     }
+
+    this.updateDent(dt);
 
     // Hopping: turn, crouch, arc through the air, then splat on landing.
     let airborne = 0;
@@ -223,7 +292,16 @@ export class Frog {
     const s = this.squashSpring.x + airborne * 0.18 + breathe;
     this.squash.scale.set(1 - s * 0.5, 1 + s, 1 - s * 0.5);
     this.squash.rotation.z = this.wobble.x * 0.12 + (this.isHappy ? Math.sin(t * 7) * 0.06 * this.happiness : 0);
-    this.squash.rotation.x = -airborne * 0.25;
+    // Annoyed: shake head "no", lean back, frown. Fades out over about 1.3 seconds.
+    this.annoyed = Math.max(0, this.annoyed - dt * 0.75);
+    const a = this.annoyed;
+    const shake = a > 0.25 ? Math.sin(t * 22) * 0.16 * Math.min(1, (a - 0.25) * 3) : 0;
+    this.squash.rotation.y = shake;
+    this.squash.rotation.x = -airborne * 0.25 - Math.min(1, a * 2) * 0.12;
+    this.squash.position.z = -Math.min(1, a * 2) * 0.12;
+    // Flipping the flat mouth upside down (and exaggerating the curve) makes a frown.
+    const frown = Math.min(1, a * 2.5);
+    this.mouth.scale.y = 1 - frown * 3.5;
     this.root.rotation.y = this.heading;
 
     // Eyes: blink now and then, get heavy-lidded and vacant when petted, pupils
@@ -242,7 +320,13 @@ export class Frog {
       // Lid angle: 0 covers the top half, positive closes further, negative opens.
       let lid = -0.75 + eye.droop - this.surprise * 0.9 + this.happiness * 0.8;
       if (this.blink > 0) lid = 1.5;
+      if (frown > 0) {
+        if (eye === this.annoyedEye && a > 0.3) lid = 1.5; // poked eye squeezed shut
+        else lid = Math.max(lid, -0.2 * frown); // the other one glares
+      }
       eye.lidPivot.rotation.x += (lid - eye.lidPivot.rotation.x) * Math.min(1, dt * 20);
+      // Lids slant down towards the middle for a scowl.
+      eye.lidPivot.rotation.z = eye.side * 0.4 * frown;
       eye.pupil.visible = eye.lidPivot.rotation.x < 0.1; // hidden once the lid is down over it
 
       const dx = local.x - eye.group.position.x;
