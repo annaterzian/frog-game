@@ -26,7 +26,7 @@ export function setupHome({ pond, collection, ui }) {
       // Sit it on the land spot farthest from the other frogs, so they don't pile up.
       const gap = (s) => Math.min(...pond.frogs.map((o) => o.root.position.distanceTo(s.position)), 99);
       const spot = spots.reduce((a, b) => (gap(b) > gap(a) ? b : a)).position;
-      frog.root.position.copy(spot).setY(0);
+      frog.root.position.copy(spot);
       frog.heading = (Math.random() - 0.5) * 1.2; // roughly facing you
       pond.group.add(frog.root);
       pond.frogs.push(frog);

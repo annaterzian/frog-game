@@ -70,12 +70,12 @@ export class Collection {
     return this.data.frogs.some((f) => f.recipeId === recipeId);
   }
 
-  // Called when a frog is caught. Returns the new collection entry.
-  add(recipe, now = Date.now()) {
+  // Called when a frog is caught and named. Returns the new collection entry.
+  add(recipe, name, now = Date.now()) {
     const entry = {
       id: this.data.nextId++,
       recipeId: recipe.id,
-      name: recipe.name,
+      name: String(name || 'Frog').slice(0, 24),
       bond: 0,
       patience: BOND_PER_SITTING,
       patienceAt: now,

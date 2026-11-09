@@ -1,5 +1,5 @@
 import { bondLevelName } from './collection.js';
-import { wildRecipes } from './roster.js';
+import { wildRecipes, NAME_IDEAS } from './roster.js';
 
 // The flat 2D bits on top of the 3D scene: a collection counter, short messages ("toasts"),
 // and a little card for the frog you're petting.
@@ -21,6 +21,22 @@ export function createUI(collection) {
     #card .bar { height: 7px; border-radius: 4px; background: rgba(47, 59, 34, 0.15); margin: 6px 0 4px; overflow: hidden; }
     #card .fill { height: 100%; background: #c9734f; transition: width 200ms; }
     #card .note { opacity: 0.75; margin-top: 4px; }
+    #tools { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); display: none; gap: 8px; }
+    #tools.show { display: flex; }
+    @media (max-width: 600px) { #tools { bottom: 92px; } }
+    #tools button, #namer button { font: 600 14px/1 system-ui, sans-serif; color: #2f3b22; cursor: pointer;
+      background: rgba(255, 250, 230, 0.6); border: 1.5px solid rgba(47, 59, 34, 0.35); border-radius: 999px; padding: 10px 16px; }
+    #tools button.on { background: #2f3b22; color: #fff6dc; border-color: #2f3b22; }
+    #namer { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(47, 59, 34, 0.25); }
+    #namer.show { display: flex; }
+    #namer form { background: #fbf6e2; border-radius: 16px; padding: 18px; width: min(320px, calc(100vw - 32px));
+      font: 15px/1.35 system-ui, sans-serif; color: #2f3b22; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15); }
+    #namer h2 { margin: 0 0 4px; font-size: 18px; }
+    #namer p { margin: 0 0 12px; opacity: 0.75; }
+    #namer .row { display: flex; gap: 8px; }
+    #namer input { flex: 1; min-width: 0; font: 16px system-ui, sans-serif; padding: 8px 10px; border-radius: 10px;
+      border: 1.5px solid rgba(47, 59, 34, 0.35); background: #fff; color: #2f3b22; }
+    #namer .keep { margin-top: 12px; width: 100%; background: #2f3b22; color: #fff6dc; }
   `;
   document.head.appendChild(css);
 
@@ -28,6 +44,14 @@ export function createUI(collection) {
   const toastEl = el('div', 'toast');
   const card = el('div', 'card');
   card.innerHTML = '<b></b><div class="level"></div><div class="bar"><div class="fill"></div></div><div class="note"></div>';
+
+  const namer = el('div', 'namer');
+  namer.innerHTML = `<form><h2>You caught a frog!</h2><p>What's it called?</p>
+    <div class="row"><input maxlength="24" autocomplete="off" /><button type="button" class="dice" title="Another idea">🎲</button></div>
+    <button type="submit" class="keep">Keep it</button></form>`;
+  const nameInput = namer.querySelector('input');
+  const idea = () => NAME_IDEAS[Math.floor(Math.random() * NAME_IDEAS.length)];
+  namer.querySelector('.dice').addEventListener('click', () => (nameInput.value = idea()));
 
   let toastTimer = 0;
   let cardTimer = 0;
@@ -54,6 +78,26 @@ export function createUI(collection) {
     },
     hideCard() {
       card.classList.remove('show');
+    },
+    setPond() {
+      card.classList.remove('show');
+    },
+    // Ask the player to name a freshly caught frog. Resolves with the name.
+    askName() {
+      nameInput.value = idea();
+      namer.classList.add('show');
+      setTimeout(() => nameInput.select(), 50);
+      return new Promise((resolve) => {
+        namer.querySelector('form').onsubmit = (e) => {
+          e.preventDefault();
+          namer.classList.remove('show');
+          nameInput.blur();
+          resolve(nameInput.value.trim() || idea());
+        };
+      });
+    },
+    get naming() {
+      return namer.classList.contains('show');
     },
   };
   ui.update();
