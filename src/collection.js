@@ -23,7 +23,7 @@ const BOND_PER_SITTING = 10; // most bond one frog can gain before needing a bre
 const REFILL_MINUTES = 20; // how long until that budget is full again
 
 function emptyCollection() {
-  return { version: VERSION, frogs: [], nextId: 1 };
+  return { version: VERSION, frogs: [], nextId: 1, flies: 0 };
 }
 
 export class Collection {
@@ -39,6 +39,7 @@ export class Collection {
       if (!raw) return emptyCollection();
       const data = JSON.parse(raw);
       if (data.version !== VERSION || !Array.isArray(data.frogs)) return emptyCollection();
+      data.flies ??= 0; // saves from before flies existed
       return data;
     } catch {
       return emptyCollection();
@@ -107,6 +108,23 @@ export class Collection {
     if (!f) return false;
     refillPatience(f, now);
     return f.patience <= 0.01;
+  }
+
+  // ---- The fly jar: flies you've caught at home, to use as bait.
+  get flies() {
+    return this.data.flies;
+  }
+
+  addFlies(n = 1) {
+    this.data.flies = Math.min(99, this.data.flies + n);
+    this.save();
+  }
+
+  useFly() {
+    if (this.data.flies <= 0) return false;
+    this.data.flies--;
+    this.save();
+    return true;
   }
 
   rename(id, name) {

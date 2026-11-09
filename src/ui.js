@@ -21,12 +21,12 @@ export function createUI(collection) {
     #card .bar { height: 7px; border-radius: 4px; background: rgba(47, 59, 34, 0.15); margin: 6px 0 4px; overflow: hidden; }
     #card .fill { height: 100%; background: #c9734f; transition: width 200ms; }
     #card .note { opacity: 0.75; margin-top: 4px; }
-    #tools { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); display: none; gap: 8px; }
-    #tools.show { display: flex; }
-    @media (max-width: 600px) { #tools { bottom: 92px; } }
-    #tools button, #namer button { font: 600 14px/1 system-ui, sans-serif; color: #2f3b22; cursor: pointer;
+    #tools, .toolbar { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); display: none; gap: 8px; }
+    #tools.show, .toolbar.show { display: flex; }
+    @media (max-width: 600px) { #tools, .toolbar { bottom: 92px; } }
+    #tools button, .toolbar button, #namer button { font: 600 14px/1 system-ui, sans-serif; color: #2f3b22; cursor: pointer;
       background: rgba(255, 250, 230, 0.6); border: 1.5px solid rgba(47, 59, 34, 0.35); border-radius: 999px; padding: 10px 16px; }
-    #tools button.on { background: #2f3b22; color: #fff6dc; border-color: #2f3b22; }
+    #tools button.on, .toolbar button.on { background: #2f3b22; color: #fff6dc; border-color: #2f3b22; }
     #namer { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(47, 59, 34, 0.25); }
     #namer.show { display: flex; }
     #namer form { background: #fbf6e2; border-radius: 16px; padding: 18px; width: min(320px, calc(100vw - 32px));
@@ -59,7 +59,7 @@ export function createUI(collection) {
   const ui = {
     update() {
       const total = new Set([...wildRecipes().map((r) => r.id), ...collection.frogs.map((f) => f.recipeId)]).size;
-      count.textContent = `Frogs caught: ${collection.frogs.length} / ${total}`;
+      count.textContent = `Frogs caught: ${collection.frogs.length} / ${total} · Flies in jar: ${collection.flies}`;
     },
     toast(text, ms = 1800) {
       toastEl.textContent = text;

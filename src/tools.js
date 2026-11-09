@@ -223,6 +223,40 @@ export class Net extends Tool {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The fly swatter: a wire handle and a square mesh paddle, seen face on like the hand.
+// A swat flicks the paddle into the screen.
+export class Swatter extends Tool {
+  constructor() {
+    super({ hover: 1.2, strikeAt: 0.3, duration: 0.45 });
+    this.facesCamera = true;
+    const paddleMat = this.mat('#d9583f');
+    const holes = this.mat('#a8402c', { wireframe: true });
+    const handleMat = this.mat('#e8d8a8');
+    this.pivot = new THREE.Group(); // at the bottom of the handle, like a wrist
+    this.pivot.position.z = -1.0;
+    this.group.add(this.pivot);
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 1.0, 5).rotateX(Math.PI / 2), handleMat);
+    handle.position.z = 0.5;
+    this.pivot.add(handle);
+    const paddle = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.03, 0.62), paddleMat);
+    paddle.position.z = 1.3;
+    this.pivot.add(paddle);
+    const grid = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5, 4, 4).rotateX(-Math.PI / 2), holes);
+    grid.position.set(0, 0.02, 1.3);
+    this.pivot.add(grid);
+    this.group.traverse((o) => (o.renderOrder = 20));
+  }
+
+  pose(p) {
+    // Wind back slightly towards you, then slap forward into the screen, then recover.
+    const s = this.strikeAt;
+    const flick = p < s ? Math.sin((p / s) * Math.PI * 0.5) : 1 - easeOut((p - s) / (1 - s));
+    this.pivot.rotation.x = -0.2 + this.sway * 0.2 + flick * 1.2;
+    this.pivot.rotation.z = -this.sway * 0.15;
+  }
+}
+
 // Where a carried frog should be this frame, in world space.
 export function holdPosition(tool, out = new THREE.Vector3()) {
   const anchor = tool instanceof Hand ? tool.wrist : tool.head;

@@ -3,6 +3,7 @@ import { Frog } from './frog.js';
 import { wildRecipes } from './roster.js';
 import { flatMaterial } from './shapes.js';
 import { Hand, Net, holdPosition } from './tools.js';
+import { Fly, snapTongue, updateTongue } from './flies.js';
 
 // Catching: sneak up on a wild frog and grab it.
 //
@@ -15,6 +16,9 @@ import { Hand, Net, holdPosition } from './tools.js';
 // Reaching out with the hand, or swinging the net, startles a frog a little by itself, so
 // you need it calm *before* you go for it. The net startles more than the hand.
 //
+// Fly bait: toss a fly from your jar and the nearest frog goes for it. While it chews, it
+// hardly notices you, which makes it the easiest moment to catch it.
+//
 // Lesson: this is a little "state machine". Each wild frog is always in one state
 // (calm → nervous → fleeing → gone, or caught), and the rules say what moves it between them.
 
@@ -26,6 +30,8 @@ const STARTLE = { hand: 0.15, net: 0.3 }; // how much going for it adds to the f
 const CALM_GRAB = 0.6; // the catch works only while the frog's alarm is below this
 const GONE_FOR = 150; // seconds a scared-off frog stays away
 const WATER_Y = -0.15;
+const CHEW_TIME = 5; // seconds a frog is distracted after eating bait
+const BAIT_NOTICE = 9; // how far away a frog notices a tossed fly
 
 export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
   const tools = { hand: new Hand(), net: new Net() };
@@ -45,8 +51,14 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
   // ---- Toolbar
   const bar = document.createElement('div');
   bar.id = 'tools';
-  bar.innerHTML = '<button type="button" data-tool="hand">✋ Hand</button><button type="button" data-tool="net">🥅 Net</button>';
+  bar.className = 'toolbar';
+  bar.innerHTML =
+    '<button type="button" data-tool="hand">✋ Hand</button>' +
+    '<button type="button" data-tool="net">🥅 Net</button>' +
+    '<button type="button" data-tool="bait">🪰 Fly bait <span></span></button>';
   document.body.appendChild(bar);
+  const baitCount = bar.querySelector('[data-tool="bait"] span');
+  const showBaitCount = () => (baitCount.textContent = `(${collection.flies})`);
   function selectTool(name) {
     toolName = name;
     for (const b of bar.querySelectorAll('button')) b.classList.toggle('on', b.dataset.tool === name);
@@ -59,6 +71,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
     if (!state.active || ui.naming) return;
     if (e.key === '1') selectTool('hand');
     if (e.key === '2') selectTool('net');
+    if (e.key === '3') selectTool('bait');
   });
   selectTool('hand');
 
@@ -96,9 +109,9 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       frog.root.scale.setScalar(WILD_SCALE);
       frog.root.position.copy(spot.position);
       frog.heading = Math.random() * Math.PI * 2;
-      const w = { frog, recipe, alert: 0, spot, inWater: inWater(spot), fleeing: null, caught: false };
+      const w = { frog, recipe, alert: 0, spot, inWater: inWater(spot), fleeing: null, caught: false, chew: 0, chasing: null };
       // Wild frogs don't wander anywhere at random; they hop between nearby spots.
-      frog.wander = () => hopToSpot(w, 1.5, 4.5, 0.7);
+      frog.wander = () => !w.chasing && hopToSpot(w, 1.5, 4.5, 0.7);
       wild.push(w);
       pond.group.add(frog.root);
       pond.frogs.push(frog);
@@ -162,6 +175,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
 
   function tryCatch() {
     if (ui.naming) return true;
+    if (toolName === 'bait') return tossBait();
     const tool = tools[toolName];
     if (tool.busy) return true;
     const w = closestWild(aim);
@@ -178,7 +192,8 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
     tool.use(w && near ? w.frog.root.position : aim, (target) => {
       for (const o of wild) {
         const d = flatDist(o.frog.root.position, target);
-        if (d < 2.5 && !o.fleeing && !o.caught) o.alert += STARTLE[toolName] * (1 - d / 2.5) * (0.6 + o.recipe.skittish) * 1.5;
+        const distracted = o.chew > 0 ? 0.3 : 1;
+        if (d < 2.5 && !o.fleeing && !o.caught) o.alert += STARTLE[toolName] * (1 - d / 2.5) * (0.6 + o.recipe.skittish) * 1.5 * distracted;
       }
       if (!w || w.caught || w.fleeing) return null;
       if (flatDist(w.frog.root.position, target) > REACH[toolName] || w.frog.hop) return null; // it moved: a miss
@@ -187,6 +202,85 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       return null;
     });
     return near || toolName === 'net';
+  }
+
+  // ---- Bait
+  const baits = []; // { fly, t, eater }
+  function tossBait() {
+    if (!collection.useFly()) {
+      ui.toast('Your fly jar is empty. Catch flies at home with the swatter or a sugar trap.', 3200);
+      return true;
+    }
+    ui.update();
+    showBaitCount();
+    const fly = new Fly(aim, { radius: 0.25, height: 0.45 });
+    pond.group.add(fly.mesh);
+    const bait = { fly, t: 0, eater: null };
+    baits.push(bait);
+    fx.ripple(aim.clone().setY(Math.max(aim.y, WATER_Y) + 0.07), 0.4);
+    let best = null;
+    for (const w of wild) {
+      if (w.fleeing || w.caught || w.chasing) continue;
+      const d = flatDist(w.frog.root.position, aim);
+      if (d < BAIT_NOTICE && (!best || d < flatDist(best.frog.root.position, aim))) best = w;
+    }
+    if (best) {
+      bait.eater = best;
+      best.chasing = bait;
+      ui.toast('A frog noticed the fly...');
+    } else ui.toast('No frog is close enough to notice it.');
+    return true;
+  }
+
+  function removeBait(bait) {
+    baits.splice(baits.indexOf(bait), 1);
+    pond.group.remove(bait.fly.mesh);
+    if (bait.eater?.chasing === bait) bait.eater.chasing = null;
+  }
+
+  // Hop to the free spot that gets closest to `point` (if it's actually closer).
+  function hopTowards(w, point) {
+    const here = w.frog.root.position;
+    const now = flatDist(here, point);
+    let best = null;
+    for (const s of freeSpots()) {
+      const d = flatDist(s.position, point);
+      if (s.position.distanceTo(here) < 6 && d < now - 0.6 && (!best || d < flatDist(best.position, point))) best = s;
+    }
+    if (!best) return false;
+    const dist = best.position.distanceTo(here);
+    if (!w.frog.hopTo(best.position, 0.7 + dist * 0.12, 0.45 + dist * 0.06)) return false;
+    w.spot = best;
+    w.inWater = inWater(best);
+    return true;
+  }
+
+  function updateBaits(dt) {
+    for (const bait of [...baits]) {
+      bait.fly.update(dt);
+      bait.t += dt;
+      const w = bait.eater;
+      if (w && (w.fleeing || w.caught)) bait.eater = null;
+      if (bait.eater && !w.frog.hop && !w.frog.tongue?.busy && !bait.fly.stuck) {
+        const d = flatDist(w.frog.root.position, bait.fly.mesh.position);
+        if (d > 2.6 && hopTowards(w, bait.fly.mesh.position)) continue;
+        if (d < 3.5) {
+          bait.fly.stuck = true;
+          snapTongue(w.frog, bait.fly, () => {
+            removeBait(bait);
+            w.chew = CHEW_TIME;
+            w.alert = 0;
+            ui.toast("It's chewing. Now's your chance!", 2200);
+          });
+        } else {
+          bait.eater = null;
+          w.chasing = null;
+        }
+      }
+      if (!bait.eater && !bait.fly.stuck && bait.t > 8) {
+        removeBait(bait); // got bored and buzzed off
+      }
+    }
   }
 
   function grab(w) {
@@ -251,6 +345,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       const touch = e.pointerType !== 'mouse';
       moveTool(e, ray, touch);
       if (touch) return true;
+      if (toolName === 'bait') return tryCatch();
       // With a mouse the tool is already there, so a click is the grab or swing.
       const w = closestWild(aim);
       if (w && flatDist(w.frog.root.position, aim) < REACH[toolName] * 1.6) return tryCatch();
@@ -267,6 +362,10 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       if (!wasPressed) return false;
       // With a finger, lifting it over a frog is the grab; lifting it elsewhere just takes the hand away.
       moveTool(e, ray, false);
+      if (toolName === 'bait') {
+        state.present = false;
+        return tryCatch();
+      }
       const w = closestWild(aim);
       const handled = w && flatDist(w.frog.root.position, aim) < REACH[toolName] * 1.6 ? tryCatch() : false;
       if (!tools[toolName].busy) state.present = false;
@@ -290,7 +389,8 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
 
     // Only the selected tool shows (unless the other one is still finishing a swing).
     for (const [name, tool] of Object.entries(tools)) {
-      const held = tool.update(dt, { present: state.present && name === toolName, target: aim, ray: ray.ray, speed: state.speed, camera });
+      const showing = toolName === 'net' ? 'net' : 'hand'; // bait is tossed by hand
+      const held = tool.update(dt, { present: state.present && name === showing, target: aim, ray: ray.ray, speed: state.speed, camera });
       if (held) {
         // Carry the caught frog along with the hand or in the net, legs flailing.
         holdPosition(tool, held.frog.root.position);
@@ -304,7 +404,8 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
         deliver(w);
       }
     }
-    marker.update(dt, state.present && !tools[toolName].busy, aim, state.speed);
+    marker.update(dt, state.present && !(tools[toolName]?.busy), aim, state.speed);
+    updateBaits(dt);
     canvas.style.cursor = state.present ? 'none' : '';
 
     // Scared frogs come back after a while, climbing out of the water.
@@ -316,6 +417,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
 
     for (const w of [...wild]) {
       const f = w.frog;
+      updateTongue(f, dt);
       if (w.caught) continue;
       if (w.fleeing) {
         // Leap, splash, sink out of sight.
@@ -339,9 +441,10 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
         const jumpy = 0.6 + w.recipe.skittish;
         const calmSpeed = 0.9 - w.recipe.skittish * 0.45; // faster than this is "sudden"
         const rush = Math.max(0, state.speed - calmSpeed);
-        w.alert += rush * near * jumpy * 3 * dt;
+        const distracted = w.chew > 0 ? 0.25 : 1; // busy chewing: hardly notices you
+        w.alert += rush * near * jumpy * 3 * dt * distracted;
         // Even a slow hand right on top of it is a bit unnerving.
-        if (d < 1.4) w.alert += 0.06 * jumpy * dt;
+        if (d < 1.4) w.alert += 0.06 * jumpy * dt * distracted;
         // Nervous frogs turn to keep an eye on you.
         if (w.alert > 0.3) {
           const want = Math.atan2(aim.x - f.root.position.x, aim.z - f.root.position.z);
@@ -349,7 +452,11 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
           f.idleTimer = Math.max(f.idleTimer, 2);
         }
       }
-      w.alert = Math.max(0, w.alert - dt * (d < NOTICE_RADIUS ? 0.12 : 0.35));
+      w.alert = Math.max(0, w.alert - dt * (d < NOTICE_RADIUS && w.chew <= 0 ? 0.12 : 0.35));
+      if (w.chew > 0) {
+        w.chew -= dt;
+        f.squashSpring.v += Math.sin(performance.now() * 0.03) * 0.6; // munch munch
+      }
 
       // Show it: bulging eyes and trembling.
       f.surprise = Math.max(f.surprise, Math.min(1, w.alert * 1.2));
@@ -366,6 +473,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       state.active = true;
       state.present = false;
       bar.classList.add('show');
+      showBaitCount();
       const hint = document.getElementById('hint');
       if (hint) hint.textContent = 'Sneak up slowly · hand for frogs on land, net for frogs on the water · signpost goes home';
       spawnWild();
@@ -373,6 +481,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       if (!wild.length) ui.toast('The pond is quiet. Frogs will come back in a bit.', 3000);
     },
     leave() {
+      for (const b of [...baits]) removeBait(b);
       state.active = false;
       state.present = false;
       bar.classList.remove('show');

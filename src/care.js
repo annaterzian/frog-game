@@ -24,8 +24,11 @@ export function setupHome({ pond, collection, ui }) {
       frog.entryId = entry.id;
       frog.root.scale.setScalar(HOME_SCALE);
       // Sit it on the land spot farthest from the other frogs, so they don't pile up.
-      const gap = (s) => Math.min(...pond.frogs.map((o) => o.root.position.distanceTo(s.position)), 99);
-      const spot = spots.reduce((a, b) => (gap(b) > gap(a) ? b : a)).position;
+      // Also keep them near the middle of the view, where you can see them.
+      const middle = pond.camera?.lookAt ?? new THREE.Vector3();
+      const score = (s) =>
+        Math.min(...pond.frogs.map((o) => o.root.position.distanceTo(s.position)), 4) - s.position.distanceTo(middle) * 0.3;
+      const spot = spots.reduce((a, b) => (score(b) > score(a) ? b : a)).position;
       frog.root.position.copy(spot);
       frog.heading = (Math.random() - 0.5) * 1.2; // roughly facing you
       pond.group.add(frog.root);
