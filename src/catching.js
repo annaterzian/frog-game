@@ -23,7 +23,6 @@ import { Fly, snapTongue, updateTongue } from './flies.js';
 // (calm → nervous → fleeing → gone, or caught), and the rules say what moves it between them.
 
 const WILD_COUNT = 3; // how many wild frogs are out at once
-const WILD_SCALE = 0.7;
 const NOTICE_RADIUS = 4.2; // a frog only cares about your tool inside this distance
 const REACH = { hand: 1.1, net: 1.4 }; // how close to a frog you have to aim
 const STARTLE = { hand: 0.15, net: 0.3 }; // how much going for it adds to the frog's alarm
@@ -106,7 +105,6 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       const list = pool.length ? pool : spots;
       const spot = list[Math.floor(Math.random() * list.length)];
       const frog = new Frog(recipe);
-      frog.root.scale.setScalar(WILD_SCALE);
       frog.root.position.copy(spot.position);
       frog.heading = Math.random() * Math.PI * 2;
       const w = { frog, recipe, alert: 0, spot, inWater: inWater(spot), fleeing: null, caught: false, chew: 0, chasing: null };
@@ -142,7 +140,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
     if (!options.length) return false;
     const spot = options[Math.floor(Math.random() * options.length)];
     const dist = spot.position.distanceTo(here);
-    if (!w.frog.hopTo(spot.position, height + dist * 0.12, 0.45 + dist * 0.06)) return false;
+    if (!w.frog.hopTo(spot.position, (height + dist * 0.12) * w.frog.size * 1.4, 0.45 + dist * 0.06)) return false;
     w.spot = spot;
     w.inWater = inWater(spot);
     return true;
@@ -166,7 +164,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
     f.hop = null;
     f.surprise = 1;
     f.squashSpring.v += 10; // a startled stretch
-    f.hopTo(target, 1.5, 0.6);
+    f.hopTo(target, 2 * f.size, 0.6);
     w.fleeing = { t: 0, landed: false };
     w.alert = 1;
     awayUntil.set(w.recipe.id, performance.now() + GONE_FOR * 1000);
@@ -249,7 +247,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
     }
     if (!best) return false;
     const dist = best.position.distanceTo(here);
-    if (!w.frog.hopTo(best.position, 0.7 + dist * 0.12, 0.45 + dist * 0.06)) return false;
+    if (!w.frog.hopTo(best.position, (0.7 + dist * 0.12) * w.frog.size * 1.4, 0.45 + dist * 0.06)) return false;
     w.spot = best;
     w.inWater = inWater(best);
     return true;
@@ -394,7 +392,7 @@ export function setupCatching({ pond, collection, fx, ui, camera, canvas }) {
       if (held) {
         // Carry the caught frog along with the hand or in the net, legs flailing.
         holdPosition(tool, held.frog.root.position);
-        held.frog.root.position.y -= 0.35;
+        held.frog.root.position.y -= 0.6 * held.frog.size;
         held.frog.wobble.v += Math.sin(performance.now() * 0.04) * 3;
         held.frog.surprise = 1;
       }

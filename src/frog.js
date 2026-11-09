@@ -4,6 +4,11 @@ import { blob, colorFaces, flatMaterial } from './shapes.js';
 
 // Everything that makes one frog look like itself. Later, the frog workshop will
 // create and approve these recipes; for now there is one hand-picked frog.
+// How big frogs are in the world. Every frog is modelled about 2.4 units wide and
+// 1.4 tall, then shrunk by this (and by its own recipe.size, if it has one), so the
+// ponds, reeds and huts can feel big around them. Hop heights and reach scale with it.
+export const FROG_SCALE = 0.5;
+
 export const FIRST_FROG = {
   name: 'Pip',
   seed: 11,
@@ -30,8 +35,14 @@ export class Frog {
     // root: where the frog stands and which way it faces.
     // squash: squash-and-stretch happens here, pivoting at the feet.
     this.root = new THREE.Group();
+    // pokeSquish: squashes the whole frog a little along the direction it was poked.
+    this.pokeSquish = new THREE.Group();
+    this.pokeSquish.matrixAutoUpdate = false;
+    this.root.add(this.pokeSquish);
+    this.size = FROG_SCALE * (recipe.size ?? 1);
+    this.root.scale.setScalar(this.size);
     this.squash = new THREE.Group();
-    this.root.add(this.squash);
+    this.pokeSquish.add(this.squash);
     this.parts = []; // meshes the pointer can touch
 
     const add = (mesh, parent = this.squash) => {
@@ -130,6 +141,7 @@ export class Frog {
     this.wobble = { x: 0, v: 0 };
     this.annoyed = 0; // 1 right after an eye poke, fades to 0
     this.annoyedEye = null;
+    this.squish = { dir: new THREE.Vector3(0, -1, 0), anchor: new THREE.Vector3(), amount: 0 };
     this.dent = { x: 0, v: 0, target: 0, center: new THREE.Vector3(), dir: new THREE.Vector3(), part: null };
     this.lookTarget = new THREE.Vector3(0, 1, 10);
     this.happiness = 0; // rises while petted, fades slowly
@@ -165,6 +177,17 @@ export class Frog {
         this.annoyedEye = eye;
       }
     }
+    // Whole-body squish direction: from the poked point straight through the frog.
+    // The far side stays put (the anchor), so the squish comes from where you poked.
+    const inward = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).negate();
+    inward.applyQuaternion(this.root.quaternion.clone().invert());
+    const at = this.root.worldToLocal(hit.point.clone());
+    const centre = new THREE.Vector3(0, 0.55, 0);
+    this.squish.dir.copy(inward);
+    this.squish.anchor.copy(at).addScaledVector(inward, 2 * Math.max(0.3, at.distanceTo(centre)));
+    this.squish.anchor.y = Math.max(0, this.squish.anchor.y); // keep the feet on the ground
+    this.squish.amount = hit.object === this.body ? 0.08 : 0.05;
+
     this.dent.target = 1;
     this.dent.v += 8;
     this.wobble.v += (this.rng() - 0.5) * 1.5; // tiny flinch, not a full-body squash
@@ -188,7 +211,7 @@ export class Frog {
     this.idleTimer = 5;
   }
 
-  hopTo(point, height = 0.9, duration = 0.55) {
+  hopTo(point, height = 0.9 * this.size, duration = 0.55) {
     if (this.hop) return false;
     this.startHop(point.clone(), height, duration);
     return true;
@@ -211,6 +234,7 @@ export class Frog {
       if (d.x === 0) return;
       d.x = d.v = 0;
     }
+    this.updateSquish(d.x);
     if (d.part) {
       // A small piece just gets a little squished.
       d.part.scale.copy(d.part.userData.restScale).multiplyScalar(1 - d.x * 0.15);
@@ -232,6 +256,36 @@ export class Frog {
       pos.array[i * 3 + 2] = z + d.dir.z * push;
     }
     pos.needsUpdate = true;
+  }
+
+  // Squash the whole frog by a few percent along the poke direction, bulging a touch
+  // sideways to keep its volume, pivoting on the side opposite the poke.
+  updateSquish(x) {
+    const { dir: n, anchor: a, amount } = this.squish;
+    const along = 1 - amount * x; // shorter along the poke
+    const across = 1 + amount * 0.5 * x; // a little fatter the other ways
+    const k = along - across;
+    // Scale matrix = across * I + (along - across) * n nT, applied around the anchor point.
+    const m = new THREE.Matrix4().set(
+      across + k * n.x * n.x, k * n.x * n.y, k * n.x * n.z, 0,
+      k * n.y * n.x, across + k * n.y * n.y, k * n.y * n.z, 0,
+      k * n.z * n.x, k * n.z * n.y, across + k * n.z * n.z, 0,
+      0, 0, 0, 1
+    );
+    const toAnchor = new THREE.Matrix4().makeTranslation(a.x, a.y, a.z);
+    const fromAnchor = new THREE.Matrix4().makeTranslation(-a.x, -a.y, -a.z);
+    this.pokeSquish.matrix.copy(toAnchor).multiply(m).multiply(fromAnchor);
+    this.pokeSquish.matrixWorldNeedsUpdate = true;
+  }
+
+  // Height of the top of the head above the frog's feet, in world units.
+  get headHeight() {
+    return 1.6 * this.size;
+  }
+
+  // Furthest a single hop goes, in world units.
+  get hopReach() {
+    return 3.2 * this.size;
   }
 
   get isHappy() {

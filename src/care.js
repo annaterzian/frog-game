@@ -8,7 +8,6 @@ import { bondLevelName } from './collection.js';
 // The home pond's frogs are rebuilt from the saved collection each time you arrive, so the
 // collection (not the 3D scene) is the source of truth. That's what lets it survive a reload.
 
-const HOME_SCALE = 0.7;
 const BOND_PER_PIXEL = 0.001; // a sitting's worth of bond takes ~10-15 seconds of happy rubbing
 
 export function setupHome({ pond, collection, ui }) {
@@ -22,7 +21,6 @@ export function setupHome({ pond, collection, ui }) {
       if (!recipe) return;
       const frog = new Frog(recipe);
       frog.entryId = entry.id;
-      frog.root.scale.setScalar(HOME_SCALE);
       // Sit it on the land spot farthest from the other frogs, so they don't pile up.
       // Also keep them near the middle of the view, where you can see them.
       const middle = pond.camera?.lookAt ?? new THREE.Vector3();
@@ -61,7 +59,7 @@ export function setupHome({ pond, collection, ui }) {
     },
     // Where to put the heart effect, a little above the frog's head.
     headOf(frog) {
-      return frog.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1.9 * frog.root.scale.y, 0));
+      return frog.root.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, frog.headHeight + 0.2, 0));
     },
   };
 }

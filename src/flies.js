@@ -187,7 +187,7 @@ export function setupHomeFlies({ pond, collection, fx, ui, camera, canvas }) {
     const at = around.clone().add(new THREE.Vector3(Math.cos(a) * 3, 0, Math.sin(a) * 3));
     at.y = pond.land?.heightAt?.(at.x, at.z) ?? 0;
     const fly = new Fly(at, { radius: 0.5 + Math.random() * 0.5, height: 0.9 + Math.random() * 0.8 });
-    fly.mesh.scale.setScalar(1.4);
+    fly.mesh.scale.setScalar(1.1);
     fly.wanderIn = 0;
     flies.push(fly);
     pond.group.add(fly.mesh);

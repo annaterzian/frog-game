@@ -1,20 +1,21 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../rng.js';
 import {
-  Baker, makeWater, landClamper, grassClump, reedBed, flowers, rock, tree, stump, mushrooms, mossyHut,
+  Baker, makeWater, landClamper, grassClump, reedBed, flowers, rock, tree, treeWall, bush, fern, wildflower,
+  stump, mushrooms, mossyHut,
   lilyPads, padSpots, signpost, swayMaterial, flatMaterial,
 } from '../world/props.js';
 import { makeLakeLand } from '../world/terrain.js';
 
 // The home pond: a calm round pond in a wide open meadow, with a little mossy hut on the
-// shore. Lots of open grass for frogs to hop about on, trees and hills all the way round.
+// shore. Lots of open grass for frogs to hop about on, walled in by thick woods all round.
 export function createHomePond() {
   const rng = mulberry32(3);
   const group = new THREE.Group();
   const bake = new Baker();
 
   const land = makeLakeLand(rng, {
-    x: 2, z: -11, radius: 9.5, phase: 1.2, meadow: 16, hills: 7,
+    x: 2, z: -11, radius: 9.5, phase: 1.2, meadow: 12, hills: 7,
     colors: {
       grass: ['#8fab55', '#98b45c', '#a3bc64', '#adc36c'],
       hill: ['#88a55a', '#93ad62', '#9fb66b'],
@@ -59,7 +60,7 @@ export function createHomePond() {
   // ---- The meadow: sparse grass clumps and flowers, so there's room to roam.
   for (let i = 0; i < 70; i++) {
     const a = rng() * Math.PI * 2;
-    const p = land.shorePoint(a, 0.4 + rng() * 15);
+    const p = land.shorePoint(a, 0.4 + rng() * 11);
     if (p.distanceTo(hutPos) < 2.6) continue;
     grassClump(bake, rng, p.x, p.y, p.z, { mats: grass, height: 0.5 + rng() * 0.5, count: 5 + Math.floor(rng() * 4) });
   }
@@ -72,28 +73,48 @@ export function createHomePond() {
   const petal2 = flatMaterial('#f4f1e4');
   const centre = flatMaterial('#d79a3c');
   for (let i = 0; i < 26; i++) {
-    const p = land.shorePoint(rng() * Math.PI * 2, 1.5 + rng() * 12);
+    const p = land.shorePoint(rng() * Math.PI * 2, 1.5 + rng() * 9);
     flowers(bake, rng, p.x, p.y, p.z, { petal: i % 2 ? petal : petal2, centre, stem: grass[1], count: 3 + Math.floor(rng() * 4) });
   }
   for (let i = 0; i < 6; i++) {
-    const p = land.shorePoint(rng() * Math.PI * 2, 0.3 + rng() * 10);
+    const p = land.shorePoint(rng() * Math.PI * 2, 0.3 + rng() * 8);
     rock(bake, rng, p.x, p.y, p.z, rockMat, 0.8 + rng() * 0.8);
   }
 
-  // ---- Trees: a few lone ones in the meadow, then woods on the hills all round.
-  for (const [x, z, s] of [[9, -2, 1.1], [-14, -6, 1], [12, -18, 0.9], [-11, -23, 1.2]]) {
-    tree(bake, rng, x, groundAt(x, z), z, { crown, trunk, size: s });
+  // ---- The woods: a thick wall of trees all round the meadow, with open grass between it
+  // and the pond. The bit behind the camera is left out so it never blocks the view.
+  const behindCamera = (p) => p.z > 4 && Math.abs(p.x) < 18;
+  treeWall(bake, rng, land, { from: 12, depth: 10, spacing: 1.7, crown, trunk, skip: behindCamera });
+  for (let i = 0; i < 160; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 22 + rng() * 22);
+    if (behindCamera(p)) continue;
+    tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size: 1 + rng() * 0.6 });
   }
-  for (let i = 0; i < 150; i++) {
-    const a = rng() * Math.PI * 2;
-    const p = land.shorePoint(a, 17 + rng() * 30);
-    if (p.z > 8 && Math.abs(p.x) < 22) continue; // keep the view from the camera open
-    tree(bake, rng, p.x, p.y, p.z, { crown, trunk, size: 0.9 + rng() * 0.6 });
+
+  // ---- Undergrowth along the foot of the woods: bushes, berry bushes and ferns.
+  const bushMats = ['#5f8240', '#6d8f48', '#7a9a4f'].map((c) => flatMaterial(c));
+  const berries = flatMaterial('#b8434a');
+  const fernMat = swayMaterial('#7fa04a', { sway: 0.04 });
+  for (let i = 0; i < 110; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 10.4 + rng() * 2.2);
+    if (behindCamera(p)) continue;
+    if (rng() < 0.7) bush(bake, rng, p.x, p.y, p.z, { mats: bushMats, size: 0.9 + rng() * 0.7, berries: rng() < 0.15 ? berries : null });
+    else fern(bake, rng, p.x, p.y, p.z, { mat: fernMat, size: 0.9 + rng() * 0.4 });
   }
-  for (let i = 0; i < 40; i++) {
-    const p = land.shorePoint(rng() * Math.PI * 2, 14 + rng() * 20);
-    if (p.z > 6 && Math.abs(p.x) < 22) continue;
-    grassClump(bake, rng, p.x, p.y, p.z, { mats: reeds, height: 1.2, count: 8, spread: 1 });
+  // A few bushes and ferns around the hut, and a couple by the water.
+  for (const [x, z, kind] of [[-11.6, -3.4, 'bush'], [-10.8, -5.2, 'bush'], [-6.6, -4.4, 'fern'], [-11.8, -0.8, 'fern'], [-7.2, -5.6, 'berry']]) {
+    if (kind === 'fern') fern(bake, rng, x, groundAt(x, z), z, { mat: fernMat });
+    else bush(bake, rng, x, groundAt(x, z), z, { mats: bushMats, size: 0.9, berries: kind === 'berry' ? berries : null });
+  }
+  for (const a of [2.6, 0.9]) {
+    const p = land.shorePoint(a, 1.2);
+    bush(bake, rng, p.x, p.y, p.z, { mats: bushMats, size: 0.8 });
+  }
+  // Tall purple wildflowers here and there in the meadow.
+  const bells = flatMaterial('#a98bc9');
+  for (let i = 0; i < 12; i++) {
+    const p = land.shorePoint(rng() * Math.PI * 2, 2 + rng() * 7);
+    wildflower(bake, rng, p.x, p.y, p.z, { petal: bells, stem: grass[1] });
   }
 
   bake.build(group);
@@ -129,10 +150,10 @@ export function createHomePond() {
     frogs: [],
     frogSpots,
     clampToLand: landClamper([land]),
-    camera: { position: new THREE.Vector3(0, 8.5, 13.5), lookAt: new THREE.Vector3(0, 0.5, -1.5), pan: 14 },
+    camera: { position: new THREE.Vector3(0.5, 7, 13), lookAt: new THREE.Vector3(1, 0.5, -5), pan: 12 },
     look: {
       haze: '#ddd8b0',
-      fog: [6, 45], // fog starts this far past the camera's distance, and is thick by the second
+      fog: [10, 50], // fog starts this far past the camera's distance, and is thick by the second
       sky: 0xfff1d0,
       groundLight: 0x4c6b46,
       sun: 0xffdca6,
