@@ -100,14 +100,10 @@ function castAt(e) {
 }
 
 function frogUnderPointer(pond) {
-  let best = null;
-  let bestDist = Infinity;
+  let best = { frog: null, hit: null };
   for (const f of pond.frogs) {
     const hit = raycaster.intersectObjects(f.parts, false)[0];
-    if (hit && hit.distance < bestDist) {
-      best = f;
-      bestDist = hit.distance;
-    }
+    if (hit && (!best.hit || hit.distance < best.hit.distance)) best = { frog: f, hit };
   }
   return best;
 }
@@ -118,7 +114,9 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   castAt(e);
   renderer.domElement.setPointerCapture(e.pointerId);
   if (pond.input?.down?.(e, raycaster)) return;
-  Object.assign(press, { active: true, frog: frogUnderPointer(pond), moved: 0, x: e.clientX, y: e.clientY });
+  const { frog, hit } = frogUnderPointer(pond);
+  if (frog) frog.press(hit); // dents the spot you touch
+  Object.assign(press, { active: true, frog, moved: 0, x: e.clientX, y: e.clientY });
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
@@ -134,6 +132,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (!press.active) return;
   const step = Math.hypot(e.clientX - press.x, e.clientY - press.y);
   press.moved += step;
+  if (press.frog && press.moved > 12) press.frog.release(); // it's a rub now, not a press
   press.x = e.clientX;
   press.y = e.clientY;
   // Rubbing back and forth over a frog counts as petting.
@@ -156,6 +155,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
   if (!press.active) return;
   press.active = false;
+  press.frog?.release();
   // Touch screens have no hover, so after a tap the frogs go back to looking at you.
   if (e.pointerType !== 'mouse') setTimeout(() => pond.frogs.forEach((f) => f.lookTarget.copy(camera.position)), 900);
   if (press.moved > 12) return; // that was a drag, not a tap
