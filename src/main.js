@@ -65,7 +65,9 @@ function castAt(e) {
 
 renderer.domElement.addEventListener('pointerdown', (e) => {
   castAt(e);
-  const onFrog = raycaster.intersectObjects(frog.parts, false).length > 0;
+  const hit = raycaster.intersectObjects(frog.parts, false)[0];
+  const onFrog = !!hit;
+  if (hit) frog.press(hit);
   Object.assign(press, { active: true, onFrog, moved: 0, x: e.clientX, y: e.clientY });
   renderer.domElement.setPointerCapture(e.pointerId);
 });
@@ -79,6 +81,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (!press.active) return;
   const step = Math.hypot(e.clientX - press.x, e.clientY - press.y);
   press.moved += step;
+  if (press.onFrog && press.moved > 12) frog.release(); // it's a rub now, not a press
   press.x = e.clientX;
   press.y = e.clientY;
   // Rubbing back and forth over the frog counts as petting.
@@ -96,6 +99,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   press.active = false;
   // Touch screens have no hover, so after a tap the frog goes back to looking at you.
   if (e.pointerType !== 'mouse') setTimeout(() => frog.lookTarget.copy(camera.position), 900);
+  frog.release();
   if (press.moved > 12) return; // that was a drag, not a tap
   castAt(e);
   if (press.onFrog) {
