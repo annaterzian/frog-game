@@ -18,6 +18,7 @@ export const FIRST_FROG = {
   eyeMismatch: 0.15, // the right eye is this much smaller than the left
   plumpness: 1,
   eyeSize: 1,
+  mouth: 1, // 1: slight smile, 0: flat, -1: slight frown (anything in between works too)
 };
 
 const tmp = new THREE.Vector3();
@@ -126,12 +127,13 @@ export class Frog {
       this.eyes.push({ group: eye, pivot, pupil, lidPivot, r, droop, side, follow: side < 0 ? 1 : 0.35 });
     }
 
-    // ---- Mouth: a long, flat, slightly crooked line. Not a smile, just... a mouth.
-    const arc = 0.5;
-    const mouthGeo = new THREE.TorusGeometry(2, 0.03, 3, 3, arc);
-    mouthGeo.rotateZ(-Math.PI / 2 - arc / 2);
-    mouthGeo.translate(0, 2, 0);
-    const mouth = new THREE.Mesh(mouthGeo, flatMaterial(0x2b2a1f));
+    // ---- Mouth: a long, slightly crooked line in three straight pieces. recipe.mouth bends
+    // it: a little up at the ends (slight smile), flat, or a little down (slight frown).
+    const mouthGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.99, 3, 3, true);
+    mouthGeo.rotateZ(Math.PI / 2); // lie it along x
+    this.mouthRest = mouthGeo.attributes.position.array.slice();
+    this.mouthCurve = recipe.mouth ?? 0;
+    const mouth = new THREE.Mesh(mouthGeo, flatMaterial(0x2b2a1f, { side: THREE.DoubleSide }));
     mouth.position.set(0.06, 0.74, 1.05);
     mouth.rotation.set(-0.2, 0, 0.07);
     this.squash.add(mouth);
@@ -279,6 +281,21 @@ export class Frog {
     this.pokeSquish.matrixWorldNeedsUpdate = true;
   }
 
+  // Bend the mouth: each point moves up by curve * x², so the ends rise (smile, curve > 0)
+  // or drop (frown, curve < 0) while the middle stays put. 1 lifts the ends about 0.06.
+  bendMouth(curve) {
+    if (curve === this.mouthBent) return;
+    this.mouthBent = curve;
+    const pos = this.mouth.geometry.attributes.position;
+    const rest = this.mouthRest;
+    for (let i = 0; i < pos.count; i++) {
+      const x = rest[i * 3];
+      pos.array[i * 3 + 1] = rest[i * 3 + 1] + curve * 0.253 * x * x;
+    }
+    pos.needsUpdate = true;
+    this.mouth.geometry.computeVertexNormals();
+  }
+
   // Height of the top of the head above the frog's feet, in world units.
   get headHeight() {
     return 1.6 * this.size;
@@ -353,9 +370,9 @@ export class Frog {
     this.squash.rotation.y = shake;
     this.squash.rotation.x = -airborne * 0.25 - Math.min(1, a * 2) * 0.12;
     this.squash.position.z = -Math.min(1, a * 2) * 0.12;
-    // Flipping the flat mouth upside down (and exaggerating the curve) makes a frown.
+    // Annoyed: bend the mouth down into a proper frown, whatever its resting shape.
     const frown = Math.min(1, a * 2.5);
-    this.mouth.scale.y = 1 - frown * 3.5;
+    this.bendMouth(this.mouthCurve * (1 - frown) - frown * 2.5);
     this.root.rotation.y = this.heading;
 
     // Eyes: blink now and then, get heavy-lidded and vacant when petted, pupils
