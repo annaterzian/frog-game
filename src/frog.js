@@ -53,28 +53,42 @@ export class Frog {
       return mesh;
     };
 
-    // ---- Body: a squat, lumpy blob with a pale belly and a few darker spots.
-    const bodyGeo = blob(rng, { detail: 1, rough: 0.1, sx: 1.25 * plump, sy: 0.8, sz: 1.1 });
-    const pos = bodyGeo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      // Flatten the bottom so it sits on the ground, and lift the front a little (the "face").
-      let y = pos.getY(i);
-      if (y < -0.35) y = -0.35 + (y + 0.35) * 0.35;
-      y += Math.max(0, pos.getZ(i)) * 0.12;
-      pos.setY(i, y);
-    }
-    bodyGeo.computeVertexNormals();
+    // ---- Body: a squat, lumpy ball with a pale belly and a few darker spots, built ring by
+    // ring so one ring runs exactly along the mouth line. Everything below that ring at the
+    // front is the lower jaw: a separate piece on a hinge, so the mouth can open along the
+    // facet edges instead of tearing through the middle of triangles.
+    const { upper, jaw, roof, floor, hinge, mouthFront } = buildBody(rng, plump);
     const spotCentres = Array.from({ length: 5 }, () =>
       new THREE.Vector3((rng() - 0.5) * 1.8, 0.4 + rng() * 0.4, (rng() - 0.6) * 1.4)
     );
-    colorFaces(bodyGeo, (c) => {
+    const bodyColour = (c) => {
       if (c.y < -0.12 && c.z > -0.4) return bellyCol;
       if (spotCentres.some((s) => s.distanceTo(c) < 0.32)) return spotCol;
       return bodyCol;
-    });
-    this.body = add(new THREE.Mesh(bodyGeo, flatMaterial(0xffffff, { vertexColors: true })));
+    };
+    colorFaces(upper, bodyColour);
+    colorFaces(jaw, bodyColour);
+    const skinMat = flatMaterial(0xffffff, { vertexColors: true });
+    this.body = add(new THREE.Mesh(upper, skinMat));
     this.body.position.y = 0.5;
-    this.bodyRest = bodyGeo.attributes.position.array.slice(); // undented shape, for poking
+    this.bodyRest = upper.attributes.position.array.slice(); // undented shape, for poking
+    // Inside of the mouth: a dark roof on the head and a pinkish floor on the jaw. While the
+    // mouth is shut they sit on top of each other, hidden inside the frog.
+    const roofMesh = new THREE.Mesh(roof, flatMaterial('#3b2622', { side: THREE.DoubleSide }));
+    roofMesh.position.y = 0.5;
+    this.squash.add(roofMesh);
+    // The jaw hangs on a hinge running through the corners of the mouth.
+    this.jaw = new THREE.Group();
+    this.jaw.position.set(0, 0.5, 0).add(hinge);
+    this.squash.add(this.jaw);
+    jaw.translate(-hinge.x, -hinge.y, -hinge.z);
+    floor.translate(-hinge.x, -hinge.y, -hinge.z);
+    add(new THREE.Mesh(jaw, skinMat), this.jaw);
+    this.jaw.add(new THREE.Mesh(floor, flatMaterial('#a5585a', { side: THREE.DoubleSide })));
+    this.mouthOpen = 0; // set 0..1 to open the mouth; it eases there quickly
+    this.jawAngle = 0;
+    // Where a tongue should come from: inside the mouth, a little behind the lips.
+    this.mouthLocal = new THREE.Vector3(0, 0.5, 0).add(mouthFront).add(new THREE.Vector3(0, -0.02, -0.25));
 
     // ---- Throat pouch: hidden until the frog croaks.
     this.pouch = add(new THREE.Mesh(blob(rng, { detail: 0, rough: 0.05 }), flatMaterial(bellyCol)));
@@ -134,7 +148,7 @@ export class Frog {
     this.mouthRest = mouthGeo.attributes.position.array.slice();
     this.mouthCurve = recipe.mouth ?? 0;
     const mouth = new THREE.Mesh(mouthGeo, flatMaterial(0x2b2a1f, { side: THREE.DoubleSide }));
-    mouth.position.set(0.06, 0.74, 1.05);
+    mouth.position.set(0.06, 0.5, 0).add(mouthFront).add(new THREE.Vector3(0, 0, 0.02));
     mouth.rotation.set(-0.2, 0, 0.07);
     this.squash.add(mouth);
     this.mouth = mouth;
@@ -368,12 +382,16 @@ export class Frog {
     const a = this.annoyed;
     const shake = a > 0.25 ? Math.sin(t * 22) * 0.16 * Math.min(1, (a - 0.25) * 3) : 0;
     this.squash.rotation.y = shake;
-    this.squash.rotation.x = -airborne * 0.25 - Math.min(1, a * 2) * 0.12;
+    // Opening the mouth tips the head back a little, like a frog lifting its chin to gulp.
+    this.squash.rotation.x = -airborne * 0.25 - Math.min(1, a * 2) * 0.12 - this.jawAngle * 0.45;
     this.squash.position.z = -Math.min(1, a * 2) * 0.12;
     // Annoyed: bend the mouth down into a proper frown, whatever its resting shape.
     const frown = Math.min(1, a * 2.5);
     this.bendMouth(this.mouthCurve * (1 - frown) - frown * 2.5);
     this.root.rotation.y = this.heading;
+    // Mouth: ease the jaw towards mouthOpen fast (about 0.07 s), so a tongue snap looks right.
+    this.jawAngle += (this.mouthOpen * 0.42 - this.jawAngle) * Math.min(1, dt * 40);
+    this.jaw.rotation.x = this.jawAngle;
 
     // Eyes: blink now and then, get heavy-lidded and vacant when petted, pupils
     // (sort of) follow the pointer.
@@ -415,6 +433,68 @@ export class Frog {
       eye.pupil.scale.set(p, p, p * 0.5);
     }
   }
+}
+
+// The frog's body as rings of points around the up axis, from the bottom to the top of
+// the head, roughened a little. One ring (SEAM) runs along the mouth; the five faces between
+// the mouth corners, in the two bands under it, become the jaw.
+const RING_LATS = [-90, -62, -34, -12, 8, 28, 52, 74, 90]; // degrees, bottom to top
+const SEAM = 4;
+const JAW_FROM = 2; // the jaw spans rings 2..4
+const SIDES = 10;
+// Meridians every 36°, placed so there is one at each side (±90°): the mouth corners.
+const PHIS = Array.from({ length: SIDES }, (_, k) => THREE.MathUtils.degToRad(-162 + k * 36));
+const JAW_PHI = [2, 7]; // meridians -90° .. +90°: the front half
+
+function buildBody(rng, plump) {
+  const grid = RING_LATS.map((latDeg, i) => {
+    const lat = THREE.MathUtils.degToRad(latDeg);
+    const pole = i === 0 || i === RING_LATS.length - 1;
+    const one = pole ? 1 + (rng() - 0.5) * 0.1 : 0;
+    return PHIS.map((phi) => {
+      const k = pole ? one : 1 + (rng() - 0.5) * 0.1;
+      const p = new THREE.Vector3(Math.cos(lat) * Math.sin(phi), Math.sin(lat), Math.cos(lat) * Math.cos(phi));
+      p.multiplyScalar(k).multiply(new THREE.Vector3(1.25 * plump, 0.8, 1.1));
+      // Flatten the bottom so it sits on the ground, and lift the front a little (the "face").
+      if (p.y < -0.35) p.y = -0.35 + (p.y + 0.35) * 0.35;
+      p.y += Math.max(0, p.z) * 0.12;
+      return p;
+    });
+  });
+
+  const upper = [];
+  const jaw = [];
+  const tri = (list, a, b, c) => list.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for (let i = 0; i < RING_LATS.length - 1; i++) {
+    for (let j = 0; j < SIDES; j++) {
+      const j2 = (j + 1) % SIDES;
+      const a = grid[i][j], b = grid[i][j2], c = grid[i + 1][j2], d = grid[i + 1][j];
+      const inJaw = i >= JAW_FROM && i < SEAM && j >= JAW_PHI[0] && j < JAW_PHI[1];
+      const list = inJaw ? jaw : upper;
+      if (i > 0) tri(list, a, b, c); // the bottom ring all meets in one point
+      if (i < RING_LATS.length - 2) tri(list, a, c, d); // so does the top
+    }
+  }
+
+  // The hinge runs through the two mouth corners.
+  const left = grid[SEAM][JAW_PHI[0]];
+  const right = grid[SEAM][JAW_PHI[1]];
+  const hinge = left.clone().add(right).multiplyScalar(0.5);
+  const roof = [];
+  const floor = [];
+  for (let j = JAW_PHI[0]; j < JAW_PHI[1]; j++) {
+    tri(roof, hinge, grid[SEAM][j], grid[SEAM][j + 1]);
+    tri(floor, hinge, grid[SEAM][j + 1], grid[SEAM][j]);
+  }
+  const geo = (arr) => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  // Middle of the lips: halfway between the two front-most points of the mouth ring.
+  const mouthFront = grid[SEAM][4].clone().add(grid[SEAM][5]).multiplyScalar(0.5);
+  return { upper: geo(upper), jaw: geo(jaw), roof: geo(roof), floor: geo(floor), hinge, mouthFront };
 }
 
 // A low-poly ball (8 sides, 6 rings) with its poles pointing left and right, so its rings
