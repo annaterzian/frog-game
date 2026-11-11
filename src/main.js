@@ -18,9 +18,11 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color();
 scene.fog = new THREE.Fog(0xffffff, 12, 34);
 
-const hemi = new THREE.HemisphereLight(0xfff1d0, 0x4c6b46, 1.5);
+// The sun is strong next to the soft sky light, so faces turned different ways land on
+// clearly different shades. That contrast is what makes the low-poly facets visible.
+const hemi = new THREE.HemisphereLight(0xfff1d0, 0x4c6b46, 1.2);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffdca6, 2.0);
+const sun = new THREE.DirectionalLight(0xffdca6, 2.5);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.radius = 4;

@@ -25,6 +25,18 @@ npm run build   # outputs to dist/
 npm run preview # serves the built version
 ```
 
+## Art style
+
+Low-poly and faceted, but organic. When adding or changing anything that's seen in the game:
+
+- **Few, visible faces.** Build round things from low-detail icosahedrons (`blob()` in `src/shapes.js`, `detail: 0` or `1`) or cylinders with 5 to 9 sides. If you can't see the individual faces from the normal camera, it has too many.
+- **Flat shading.** Use `flatMaterial()` (or `flatShading: true`), so each face gets one tone and the polygon edges stay visible.
+- **Organic, not blocky.** Rough shapes up with `lumpy()` / `blob({ rough })` and squash them, so silhouettes feel natural.
+- **Simple anatomy, no texture detail.** Shape, silhouette and per-face colour (`colorFaces()`) do the work. No painted textures (the signpost lettering is the one exception).
+- **Lighting shows the facets.** The sun is strong compared to the sky light, so neighbouring faces land on clearly different shades.
+- Keep the current colour palette and the water shader as they are.
+- Frogs stay not-too-cute: awkward, dumb faces, no blush, chunky simple legs.
+
 ## How the code is laid out
 
 - `src/main.js`: renderer, lights, camera, pointer input, main loop

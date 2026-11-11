@@ -38,6 +38,9 @@ export function colorFaces(geometry, pickColor) {
 }
 
 // A chunky low-poly blob: an icosahedron, squashed into shape and roughed up.
+// Lesson: `detail` is how many times each of the 20 triangles is split. detail 0 has 20
+// faces, 1 has 80, 2 has 180. With flat shading every face is one tone, so fewer faces
+// means bigger, more visible facets: that's what makes the art read as low-poly.
 export function blob(rng, { detail = 1, rough = 0.12, sx = 1, sy = 1, sz = 1 } = {}) {
   const g = new THREE.IcosahedronGeometry(1, detail);
   lumpy(g, rng, rough);
