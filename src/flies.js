@@ -66,41 +66,99 @@ export class Fly {
 }
 
 // ---------------------------------------------------------------------------
-// The frog's tongue: a pink stretchy thing that shoots out of the mouth to a point and back.
+// The frog's tongue: the mouth gapes open, a pink stretchy tongue shoots out to the fly and
+// snaps back with it, then the mouth shuts.
 const tongueMat = flatMaterial('#d9767a');
+const insideMat = flatMaterial('#8f302c'); // the dark red inside of the mouth
 const tongueGeo = new THREE.CylinderGeometry(0.06, 0.09, 1, 5).rotateX(Math.PI / 2).translate(0, 0, 0.5);
 const tipGeo = new THREE.IcosahedronGeometry(0.12, 0);
 const mouthLocal = new THREE.Vector3(0, 0.62, 1.0);
+const OPEN = 0.07; // seconds for the mouth to open before the tongue fires
+const OUT = 0.13; // seconds for the tongue to reach the fly
+const BACK = 0.18; // seconds to reel it in
+const SHUT = 0.15; // seconds for the mouth to close again
+
+// Stand-in open mouth, for frogs that don't have a hinged jaw (frog.jaw) yet:
+// a wedge of dark red inside, framed by a pale lower jaw that drops down.
+// It sits on the front of the face, flat and hidden (scaled to nothing) until it opens.
+function makeGape(frog) {
+  const gape = new THREE.Group();
+  gape.position.set(0.04, 0.7, 0.98);
+  gape.rotation.x = -0.15;
+  const inside = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), insideMat);
+  inside.scale.set(0.5, 0.01, 0.22);
+  gape.add(inside);
+  const jawPivot = new THREE.Group(); // hinged at the back corners of the mouth
+  jawPivot.position.z = -0.35;
+  gape.add(jawPivot);
+  const jawGeo = new THREE.IcosahedronGeometry(1, 1);
+  // Keep only the bottom half's shape: squash the top flat so it reads as a lower lip.
+  const pos = jawGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) if (pos.getY(i) > 0) pos.setY(i, pos.getY(i) * 0.2);
+  jawGeo.computeVertexNormals();
+  const jaw = new THREE.Mesh(jawGeo, flatMaterial(frog.recipe.belly ?? '#e6dca6'));
+  jaw.scale.set(0.55, 0.13, 0.3);
+  jaw.position.set(0, -0.02, 0.38);
+  jawPivot.add(jaw);
+  frog.squash.add(gape);
+  return { gape, inside, jawPivot, jaw, open: 0 };
+}
+
+function setGape(frog, open) {
+  // Frogs with a real hinged jaw (built in frog.js) just get told how far to open.
+  if (frog.jaw) {
+    frog.mouthOpen = open > 0 ? 1 : 0;
+    return;
+  }
+  const g = frog.tongue.gape;
+  g.open = open;
+  g.gape.visible = open > 0.01;
+  g.inside.scale.y = 0.01 + open * 0.24;
+  g.inside.position.y = -open * 0.12;
+  g.jawPivot.rotation.x = open * 0.55; // the jaw swings down
+  g.jaw.scale.x = 0.5 + open * 0.08;
+  if (frog.mouth) frog.mouth.visible = open < 0.2; // the closed-mouth line hides while it's open
+}
 
 // Shoot the tongue at `fly`; the fly rides the tip back in. Calls done() when swallowed.
 export function snapTongue(frog, fly, done) {
   if (frog.tongue?.busy) return false;
   if (!frog.tongue) {
     const pivot = new THREE.Group();
-    pivot.position.copy(mouthLocal);
+    pivot.position.copy(frog.mouthLocal ?? mouthLocal);
     const stalk = new THREE.Mesh(tongueGeo, tongueMat);
     const tip = new THREE.Mesh(tipGeo, tongueMat);
     pivot.add(stalk, tip);
     pivot.visible = false;
     frog.squash.add(pivot);
-    frog.tongue = { pivot, stalk, tip, busy: false };
+    // Until every frog has a hinged jaw, the ones without get a stand-in gape.
+    frog.tongue = { pivot, stalk, tip, busy: false, shutting: 0, gape: frog.jaw ? null : makeGape(frog) };
   }
   const tg = frog.tongue;
   // Face the fly first, so the tongue comes out of the front.
   const p = frog.root.position;
   frog.heading = Math.atan2(fly.mesh.position.x - p.x, fly.mesh.position.z - p.z);
   tg.busy = { t: 0, fly, done };
+  tg.shutting = 0;
   return true;
 }
 
 export function updateTongue(frog, dt) {
   const tg = frog.tongue;
-  if (!tg?.busy) return;
+  if (!tg) return;
+  if (!tg.busy) {
+    // Closing the mouth after a gulp.
+    if (tg.shutting > 0) {
+      tg.shutting = Math.max(0, tg.shutting - dt);
+      setGape(frog, tg.shutting / SHUT);
+    }
+    return;
+  }
   const b = tg.busy;
   b.t += dt;
-  const out = 0.12; // seconds to reach
-  const back = 0.18;
-  const p = b.t < out ? b.t / out : Math.max(0, 1 - (b.t - out) / back);
+  setGape(frog, Math.min(1, b.t / OPEN));
+  const t = b.t - OPEN; // the tongue's own clock starts once the mouth is open
+  const p = t < 0 ? 0 : t < OUT ? t / OUT : Math.max(0, 1 - (t - OUT) / BACK);
   const target = b.fly.mesh.position;
   tg.pivot.visible = p > 0;
   tg.pivot.lookAt(target);
@@ -109,14 +167,15 @@ export function updateTongue(frog, dt) {
   const len = (mouth.distanceTo(target) / scale) * p;
   tg.stalk.scale.set(1, 1, Math.max(0.01, len));
   tg.tip.position.z = len;
-  if (b.t >= out) {
+  if (t >= OUT) {
     // The fly is stuck to the tip on the way back.
     tg.tip.getWorldPosition(b.fly.mesh.position);
     b.fly.stuck = true;
   }
-  if (b.t >= out + back) {
+  if (t >= OUT + BACK) {
     tg.busy = false;
     tg.pivot.visible = false;
+    tg.shutting = SHUT;
     frog.squashSpring.v -= 4; // gulp
     b.done();
   }
