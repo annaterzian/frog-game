@@ -98,10 +98,13 @@ export class Frog {
       const eye = new THREE.Group();
       eye.position.set(side * 0.5 * plump, 1.18 + (side < 0 ? 0.03 : -0.02), 0.42);
       this.squash.add(eye);
-      const socket = add(new THREE.Mesh(blob(rng, { rough: 0.06 }), skin), eye);
+      // Socket, eyeball and lid are all the same 8-sided ball, turned so its rings run
+      // around the lid's hinge (the x axis). That way their facets line up like nested shells
+      // whichever way the lid is turned, instead of zigzagging across each other.
+      const socket = add(new THREE.Mesh(eyeShell(), skin), eye);
       socket.scale.setScalar(r * 1.12);
       socket.position.y = -0.06;
-      const ball = add(new THREE.Mesh(blob(rng, { detail: 1, rough: 0 }), flatMaterial(0xf1edd8, { emissive: 0x3a3830 })), eye);
+      const ball = add(new THREE.Mesh(eyeShell(), flatMaterial(0xf1edd8, { emissive: 0x3a3830 })), eye);
       ball.scale.setScalar(r);
       ball.position.set(side * 0.03, 0.04, 0.06);
       // The pupil sits on a pivot inside the eyeball, so turning the pivot moves the gaze.
@@ -111,14 +114,13 @@ export class Frog {
       const pupil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), flatMaterial(0x1d1a17));
       pupil.position.z = r * 0.9;
       pivot.add(pupil);
-      // Eyelid: a skin-coloured half dome over the eyeball. Rotating it forward closes the eye.
+      // Eyelid: the top half of a slightly bigger copy of the eyeball, so it fits snugly like
+      // a shell. Rotating it forward closes the eye.
       const lidPivot = new THREE.Group();
       lidPivot.position.copy(ball.position);
       eye.add(lidPivot);
-      const lid = add(
-        new THREE.Mesh(new THREE.SphereGeometry(r * 1.2, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2), skin),
-        lidPivot
-      );
+      const lid = add(new THREE.Mesh(eyeShell(true), skin), lidPivot);
+      lid.scale.setScalar(r * 1.1);
       lid.castShadow = false;
       const droop = side < 0 ? 0.15 : 0.35; // how heavy-lidded this eye is at rest
       this.eyes.push({ group: eye, pivot, pupil, lidPivot, r, droop, side, follow: side < 0 ? 1 : 0.35 });
@@ -396,6 +398,16 @@ export class Frog {
       eye.pupil.scale.set(p, p, p * 0.5);
     }
   }
+}
+
+// A low-poly ball (8 sides, 6 rings) with its poles pointing left and right, so its rings
+// run around the x axis. `half` keeps only the top half, for an eyelid.
+function eyeShell(half = false) {
+  const g = half
+    ? new THREE.SphereGeometry(1, 8, 6, Math.PI / 2, Math.PI)
+    : new THREE.SphereGeometry(1, 8, 6);
+  g.rotateZ(Math.PI / 2);
+  return g;
 }
 
 function lerpAngle(a, b, t) {
