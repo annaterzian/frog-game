@@ -18,6 +18,7 @@ export const FIRST_FROG = {
   eyeMismatch: 0.15, // the right eye is this much smaller than the left
   plumpness: 1,
   eyeSize: 1,
+  mouth: 1, // 1: slight smile, 0: flat, -1: slight frown (anything in between works too)
 };
 
 const tmp = new THREE.Vector3();
@@ -53,7 +54,7 @@ export class Frog {
     };
 
     // ---- Body: a squat, lumpy blob with a pale belly and a few darker spots.
-    const bodyGeo = blob(rng, { detail: 2, rough: 0.06, sx: 1.25 * plump, sy: 0.8, sz: 1.1 });
+    const bodyGeo = blob(rng, { detail: 1, rough: 0.1, sx: 1.25 * plump, sy: 0.8, sz: 1.1 });
     const pos = bodyGeo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       // Flatten the bottom so it sits on the ground, and lift the front a little (the "face").
@@ -76,16 +77,16 @@ export class Frog {
     this.bodyRest = bodyGeo.attributes.position.array.slice(); // undented shape, for poking
 
     // ---- Throat pouch: hidden until the frog croaks.
-    this.pouch = add(new THREE.Mesh(blob(rng, { detail: 1, rough: 0.05 }), flatMaterial(bellyCol)));
+    this.pouch = add(new THREE.Mesh(blob(rng, { detail: 0, rough: 0.05 }), flatMaterial(bellyCol)));
     this.pouch.position.set(0, 0.32, 0.72);
     this.pouch.scale.setScalar(0.01);
 
     // ---- Legs: big lumpy haunches at the back, stubby nubs at the front. No toes, no fuss.
     for (const side of [-1, 1]) {
-      const haunch = add(new THREE.Mesh(blob(rng, { rough: 0.18, sx: 0.55, sy: 0.42, sz: 0.78 }), skin));
+      const haunch = add(new THREE.Mesh(blob(rng, { detail: 1, rough: 0.15, sx: 0.55, sy: 0.42, sz: 0.78 }), skin));
       haunch.position.set(side * 0.95 * plump, 0.3, -0.15);
       haunch.rotation.y = side * -0.25;
-      const nub = add(new THREE.Mesh(blob(rng, { rough: 0.18, sx: 0.26, sy: 0.32, sz: 0.28 }), skin));
+      const nub = add(new THREE.Mesh(blob(rng, { detail: 0, rough: 0.15, sx: 0.26, sy: 0.32, sz: 0.28 }), skin));
       nub.position.set(side * 0.66 * plump, 0.18, 0.7);
     }
 
@@ -98,38 +99,41 @@ export class Frog {
       const eye = new THREE.Group();
       eye.position.set(side * 0.5 * plump, 1.18 + (side < 0 ? 0.03 : -0.02), 0.42);
       this.squash.add(eye);
-      const socket = add(new THREE.Mesh(blob(rng, { rough: 0.06 }), skin), eye);
+      // Socket, eyeball and lid are all the same 8-sided ball, turned so its rings run
+      // around the lid's hinge (the x axis). That way their facets line up like nested shells
+      // whichever way the lid is turned, instead of zigzagging across each other.
+      const socket = add(new THREE.Mesh(eyeShell(), skin), eye);
       socket.scale.setScalar(r * 1.12);
       socket.position.y = -0.06;
-      const ball = add(new THREE.Mesh(blob(rng, { detail: 2, rough: 0 }), flatMaterial(0xf1edd8, { emissive: 0x3a3830 })), eye);
+      const ball = add(new THREE.Mesh(eyeShell(), flatMaterial(0xf1edd8, { emissive: 0x3a3830 })), eye);
       ball.scale.setScalar(r);
       ball.position.set(side * 0.03, 0.04, 0.06);
       // The pupil sits on a pivot inside the eyeball, so turning the pivot moves the gaze.
       const pivot = new THREE.Group();
       pivot.position.copy(ball.position);
       eye.add(pivot);
-      const pupil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), flatMaterial(0x1d1a17));
+      const pupil = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), flatMaterial(0x1d1a17));
       pupil.position.z = r * 0.9;
       pivot.add(pupil);
-      // Eyelid: a skin-coloured half dome over the eyeball. Rotating it forward closes the eye.
+      // Eyelid: the top half of a slightly bigger copy of the eyeball, so it fits snugly like
+      // a shell. Rotating it forward closes the eye.
       const lidPivot = new THREE.Group();
       lidPivot.position.copy(ball.position);
       eye.add(lidPivot);
-      const lid = add(
-        new THREE.Mesh(new THREE.SphereGeometry(r * 1.08, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), skin),
-        lidPivot
-      );
+      const lid = add(new THREE.Mesh(eyeShell(true), skin), lidPivot);
+      lid.scale.setScalar(r * 1.1);
       lid.castShadow = false;
       const droop = side < 0 ? 0.15 : 0.35; // how heavy-lidded this eye is at rest
       this.eyes.push({ group: eye, pivot, pupil, lidPivot, r, droop, side, follow: side < 0 ? 1 : 0.35 });
     }
 
-    // ---- Mouth: a long, flat, slightly crooked line. Not a smile, just... a mouth.
-    const arc = 0.5;
-    const mouthGeo = new THREE.TorusGeometry(2, 0.03, 3, 8, arc);
-    mouthGeo.rotateZ(-Math.PI / 2 - arc / 2);
-    mouthGeo.translate(0, 2, 0);
-    const mouth = new THREE.Mesh(mouthGeo, flatMaterial(0x2b2a1f));
+    // ---- Mouth: a long, slightly crooked line in three straight pieces. recipe.mouth bends
+    // it: a little up at the ends (slight smile), flat, or a little down (slight frown).
+    const mouthGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.99, 3, 3, true);
+    mouthGeo.rotateZ(Math.PI / 2); // lie it along x
+    this.mouthRest = mouthGeo.attributes.position.array.slice();
+    this.mouthCurve = recipe.mouth ?? 0;
+    const mouth = new THREE.Mesh(mouthGeo, flatMaterial(0x2b2a1f, { side: THREE.DoubleSide }));
     mouth.position.set(0.06, 0.74, 1.05);
     mouth.rotation.set(-0.2, 0, 0.07);
     this.squash.add(mouth);
@@ -278,6 +282,21 @@ export class Frog {
     this.pokeSquish.matrixWorldNeedsUpdate = true;
   }
 
+  // Bend the mouth: each point moves up by curve * x², so the ends rise (smile, curve > 0)
+  // or drop (frown, curve < 0) while the middle stays put. 1 lifts the ends about 0.06.
+  bendMouth(curve) {
+    if (curve === this.mouthBent) return;
+    this.mouthBent = curve;
+    const pos = this.mouth.geometry.attributes.position;
+    const rest = this.mouthRest;
+    for (let i = 0; i < pos.count; i++) {
+      const x = rest[i * 3];
+      pos.array[i * 3 + 1] = rest[i * 3 + 1] + curve * 0.253 * x * x;
+    }
+    pos.needsUpdate = true;
+    this.mouth.geometry.computeVertexNormals();
+  }
+
   // Height of the top of the head above the frog's feet, in world units.
   get headHeight() {
     return 1.6 * this.size;
@@ -353,9 +372,9 @@ export class Frog {
     this.squash.rotation.y = shake;
     this.squash.rotation.x = -airborne * 0.25 - Math.min(1, a * 2) * 0.12;
     this.squash.position.z = -Math.min(1, a * 2) * 0.12;
-    // Flipping the flat mouth upside down (and exaggerating the curve) makes a frown.
+    // Annoyed: bend the mouth down into a proper frown, whatever its resting shape.
     const frown = Math.min(1, a * 2.5);
-    this.mouth.scale.y = 1 - frown * 3.5;
+    this.bendMouth(this.mouthCurve * (1 - frown) - frown * 2.5);
     this.root.rotation.y = this.heading;
 
     // Eyes: blink now and then, get heavy-lidded and vacant when petted, pupils
@@ -398,6 +417,16 @@ export class Frog {
       eye.pupil.scale.set(p, p, p * 0.5);
     }
   }
+}
+
+// A low-poly ball (8 sides, 6 rings) with its poles pointing left and right, so its rings
+// run around the x axis. `half` keeps only the top half, for an eyelid.
+function eyeShell(half = false) {
+  const g = half
+    ? new THREE.SphereGeometry(1, 8, 6, Math.PI / 2, Math.PI)
+    : new THREE.SphereGeometry(1, 8, 6);
+  g.rotateZ(Math.PI / 2);
+  return g;
 }
 
 function lerpAngle(a, b, t) {
