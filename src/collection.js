@@ -5,7 +5,17 @@
 // It lives in this browser only: a different browser or device starts a fresh collection.
 
 const KEY = 'frog-season/collection';
-const VERSION = 1;
+
+// Lesson: the save format will change as the game grows (new body types, eyes, colours).
+// Each save remembers which VERSION of the format it was written in. When the format
+// changes, bump VERSION and add a step to MIGRATIONS that upgrades the old shape to the
+// new one, so players keep their frogs instead of starting over.
+export const VERSION = 1;
+
+// MIGRATIONS[n] turns a version-n save into a version-(n + 1) save. Steps run in order,
+// so a very old save climbs one version at a time. Example for when VERSION becomes 2:
+//   1: (data) => { for (const f of data.frogs) f.body ??= 'classic'; return data; },
+const MIGRATIONS = {};
 
 // Bond is 0..100. Each level is a threshold the frog has to reach.
 export const BOND_LEVELS = [
@@ -37,12 +47,22 @@ export class Collection {
     try {
       const raw = this.storage?.getItem(KEY);
       if (!raw) return emptyCollection();
-      const data = JSON.parse(raw);
-      if (data.version !== VERSION || !Array.isArray(data.frogs)) return emptyCollection();
-      data.flies ??= 0; // saves from before flies existed
-      return data;
+      const data = migrate(JSON.parse(raw));
+      if (data) return data;
+      this.backUp(raw);
+      return emptyCollection();
     } catch {
       return emptyCollection();
+    }
+  }
+
+  // A save we can't read (corrupt, or from a newer version of the game) is copied aside
+  // before we start fresh, so it isn't lost when the new collection is saved over it.
+  backUp(raw) {
+    try {
+      this.storage?.setItem(`${KEY}/unreadable-${Date.now()}`, raw);
+    } catch {
+      // Nowhere to put it; nothing more we can do.
     }
   }
 
@@ -138,6 +158,22 @@ export class Collection {
     this.data = emptyCollection();
     this.save();
   }
+}
+
+// Upgrades a parsed save to the current VERSION. Returns null if it can't be read.
+export function migrate(data) {
+  if (!data || typeof data !== 'object' || !Number.isInteger(data.version)) return null;
+  if (data.version > VERSION) return null; // written by a newer version of the game
+  while (data.version < VERSION) {
+    const step = MIGRATIONS[data.version];
+    if (!step) return null;
+    data = step(data);
+    data.version++;
+  }
+  if (!Array.isArray(data.frogs)) return null;
+  data.flies ??= 0; // saves from before flies existed
+  data.nextId ??= data.frogs.reduce((m, f) => Math.max(m, f.id + 1), 1);
+  return data;
 }
 
 function refillPatience(f, now) {
