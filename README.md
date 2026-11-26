@@ -25,6 +25,20 @@ npm run build   # outputs to dist/
 npm run preview # serves the built version
 ```
 
+## Checks
+
+```sh
+npm test        # unit tests (Node's built-in runner), e.g. that old saves still load
+npm run build
+npm run smoke   # opens the built game in a headless browser and fails on any error
+```
+
+The deploy workflow runs all three before publishing, so a broken change never reaches the live site.
+
+### Changing the save format
+
+Saves carry a `version`. If you change what's stored in `src/collection.js`, bump `VERSION` and add a step to `MIGRATIONS` that upgrades the old shape, so players keep their frogs.
+
 ## Art style
 
 Low-poly and faceted, but organic. When adding or changing anything that's seen in the game:

@@ -27,7 +27,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm test
       - run: npm run build
+      # Open the built game in a headless browser; stop here if it errors, so a broken
+      # change never reaches the live site.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run smoke
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
